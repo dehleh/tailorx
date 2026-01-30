@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Tailor-X",
+    "slug": "tailor-x",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6B4EFF"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tailorx.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Tailor-X needs camera access to scan your body for accurate measurements.",
+        "NSPhotoLibraryUsageDescription": "Tailor-X needs photo library access to save and retrieve measurement photos."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#6B4EFF"
+      },
+      "package": "com.tailorx.app",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Tailor-X to access your camera for body measurement scanning."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "bcded85f-e28b-41c6-9b12-29915ba94a2f"
+      }
+    },
+    "owner": "tailor-xs-organization"
+  }
+}
