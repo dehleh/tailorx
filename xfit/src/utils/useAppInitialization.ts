@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useUserStore } from '../stores/userStore';
-import { mlService } from '../services/mlService';
 
 /**
- * Custom hook to initialize app data on startup
+ * Custom hook to initialize app data on startup.
+ * Loads persisted user profile and measurements from AsyncStorage.
  */
 export const useAppInitialization = () => {
   const loadMeasurements = useMeasurementStore((state) => state.loadMeasurements);
@@ -20,11 +20,6 @@ export const useAppInitialization = () => {
         
         // Load measurements from storage
         await loadMeasurements();
-        
-        // Initialize ML model in background
-        mlService.loadModel().catch((error) => {
-          console.warn('ML model loading failed:', error);
-        });
         
         console.log('App initialization complete');
       } catch (error) {

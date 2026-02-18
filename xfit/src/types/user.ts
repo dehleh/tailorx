@@ -5,6 +5,8 @@ export interface User {
   avatar?: string;
   gender: 'male' | 'female' | 'other';
   dateOfBirth?: Date;
+  heightCm?: number;       // User's known height in cm (critical for calibration)
+  weightKg?: number;       // User's weight in kg
   preferredUnit: 'cm' | 'inch';
   createdAt: Date;
 }

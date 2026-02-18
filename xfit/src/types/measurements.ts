@@ -17,6 +17,16 @@ export interface BodyMeasurement {
   };
   unit: 'cm' | 'inch';
   images?: string[];
+  // Production accuracy metadata
+  accuracy?: {
+    overallScore: number;           // 0-100
+    confidence: Record<string, number>;  // Per-measurement confidence
+    anglesUsed: string[];           // e.g. ['front', 'side']
+    calibrationMethod: string;      // 'known_height' | 'reference_object' | 'estimated'
+    engineVersion: string;
+    processingTimeMs: number;
+    warnings: string[];
+  };
 }
 
 export interface MeasurementPoint {

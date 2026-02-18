@@ -1,150 +1,321 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
+  TextInput,
   Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Theme } from '../constants/theme';
 import { useUserStore } from '../stores/userStore';
 import { useMeasurementStore } from '../stores/measurementStore';
-import { storageService } from '../services/storageService';
+import { UserProfile } from '../types/user';
 
 export default function ProfileScreen() {
   const user = useUserStore((state) => state.user);
   const loadUser = useUserStore((state) => state.loadUser);
-  const clearUser = useUserStore((state) => state.clearUser);
   const setUser = useUserStore((state) => state.setUser);
+  const updateUser = useUserStore((state) => state.updateUser);
+  const clearUser = useUserStore((state) => state.clearUser);
   const measurements = useMeasurementStore((state) => state.measurements);
-  
+
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editGender, setEditGender] = useState<'male' | 'female' | 'other'>('other');
+  const [editHeight, setEditHeight] = useState('');
+  const [editWeight, setEditWeight] = useState('');
+  const [editUnit, setEditUnit] = useState<'cm' | 'inch'>('cm');
+
   useEffect(() => {
     loadUser();
-    
-    // Create demo user if none exists
-    if (!user) {
+  }, []);
+
+  // Create default profile on first launch
+  useEffect(() => {
+    if (user === null) {
       setUser({
         id: 'user_' + Date.now(),
-        name: 'John Doe',
-        email: 'john.doe@example.com',
-        gender: 'male',
+        name: '',
+        email: '',
+        gender: 'other',
         preferredUnit: 'cm',
         createdAt: new Date(),
         measurementHistory: [],
       });
     }
-  }, []);
+  }, [user]);
 
-  const handleLogout = () => {
+  const openEditModal = () => {
+    setEditName(user?.name || '');
+    setEditEmail(user?.email || '');
+    setEditGender(user?.gender || 'other');
+    setEditHeight(user?.heightCm?.toString() || '');
+    setEditWeight(user?.weightKg?.toString() || '');
+    setEditUnit(user?.preferredUnit || 'cm');
+    setEditModalVisible(true);
+  };
+
+  const saveProfile = async () => {
+    const heightNum = parseFloat(editHeight);
+    const weightNum = parseFloat(editWeight);
+
+    if (editHeight && (isNaN(heightNum) || heightNum < 50 || heightNum > 250)) {
+      Alert.alert('Invalid Height', 'Please enter a height between 50 and 250 cm.');
+      return;
+    }
+    if (editWeight && (isNaN(weightNum) || weightNum < 20 || weightNum > 300)) {
+      Alert.alert('Invalid Weight', 'Please enter a weight between 20 and 300 kg.');
+      return;
+    }
+
+    await updateUser({
+      name: editName.trim() || 'User',
+      email: editEmail.trim(),
+      gender: editGender,
+      heightCm: editHeight ? heightNum : undefined,
+      weightKg: editWeight ? weightNum : undefined,
+      preferredUnit: editUnit,
+    });
+
+    setEditModalVisible(false);
+    Alert.alert('Profile Updated', 'Your profile has been saved.');
+  };
+
+  const handleResetData = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      'Reset All Data',
+      'This will delete your profile and all measurements. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Logout',
+          text: 'Reset',
           style: 'destructive',
           onPress: async () => {
             await clearUser();
-            await storageService.removeAuthToken();
-            Alert.alert('Success', 'Logged out successfully');
+            Alert.alert('Done', 'All data has been reset.');
           },
         },
       ]
     );
   };
 
-  // Mock user data with actual store data
-  const userData = {
-    name: user?.name || 'Guest User',
-    email: user?.email || 'guest@example.com',
-    gender: user?.gender || 'other',
-    joinDate: user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'January 2026',
-    totalScans: measurements.length,
-  };
+  const displayName = user?.name || 'Set Up Profile';
+  const initials = (user?.name || 'U')
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 
-  const menuItems = [
-    {
-      id: '1',
-      icon: '⚙️',
-      title: 'Settings',
-      subtitle: 'App preferences and notifications',
-    },
-    {
-      id: '2',
-      icon: '🔒',
-      title: 'Privacy',
-      subtitle: 'Manage your data and privacy',
-    },
-    {
-      id: '3',
-      icon: '💡',
-      title: 'Tips & Guides',
-      subtitle: 'Learn how to get the best measurements',
-    },
-    {
-      id: '4',
-      icon: '📞',
-      title: 'Support',
-      subtitle: 'Get help and contact us',
-    },
-    {
-      id: '5',
-      icon: 'ℹ️',
-      title: 'About',
-      subtitle: 'App version and information',
-    },
-  ];
+  const joinDate = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : '';
+
+  const profileComplete =
+    !!user?.name && !!user?.heightCm && user?.gender !== 'other';
 
   return (
     <ScrollView style={styles.container}>
+      {/* Header */}
       <View style={styles.profileHeader}>
-        <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {userData.name.split(' ').map((n) => n[0]).join('')}
-            </Text>
-          </View>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{initials}</Text>
         </View>
-        <Text style={styles.userName}>{userData.name}</Text>
-        <Text style={styles.userEmail}>{userData.email}</Text>
-        <View style={styles.statsContainer}>
+        <Text style={styles.userName}>{displayName}</Text>
+        {user?.email ? <Text style={styles.userEmail}>{user.email}</Text> : null}
+
+        <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{userData.totalScans}</Text>
-            <Text style={styles.statLabel}>Total Scans</Text>
+            <Text style={styles.statValue}>{measurements.length}</Text>
+            <Text style={styles.statLabel}>Scans</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{userData.joinDate}</Text>
-            <Text style={styles.statLabel}>Member Since</Text>
+            <Text style={styles.statValue}>
+              {user?.heightCm ? `${user.heightCm} cm` : '—'}
+            </Text>
+            <Text style={styles.statLabel}>Height</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>
+              {user?.weightKg ? `${user.weightKg} kg` : '—'}
+            </Text>
+            <Text style={styles.statLabel}>Weight</Text>
           </View>
         </View>
       </View>
 
-      <TouchableOpacity style={styles.editProfileButton}>
+      {/* Profile completeness banner */}
+      {!profileComplete && (
+        <TouchableOpacity style={styles.completeBanner} onPress={openEditModal}>
+          <Text style={styles.completeBannerIcon}>⚠️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.completeBannerTitle}>Complete Your Profile</Text>
+            <Text style={styles.completeBannerText}>
+              Add your height and gender for more accurate measurements (±1-2cm vs ±5cm)
+            </Text>
+          </View>
+          <Text style={styles.menuArrow}>›</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Edit profile */}
+      <TouchableOpacity style={styles.editProfileButton} onPress={openEditModal}>
         <Text style={styles.editProfileText}>✏️ Edit Profile</Text>
       </TouchableOpacity>
 
-      <View style={styles.menuContainer}>
-        {menuItems.map((item) => (
-          <TouchableOpacity key={item.id} style={styles.menuItem}>
-            <Text style={styles.menuIcon}>{item.icon}</Text>
-            <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>{item.title}</Text>
-              <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-            </View>
-            <Text style={styles.menuArrow}>›</Text>
-          </TouchableOpacity>
-        ))}
+      {/* Info cards */}
+      <View style={styles.infoSection}>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Gender</Text>
+          <Text style={styles.infoValue}>
+            {user?.gender === 'male' ? '♂ Male' : user?.gender === 'female' ? '♀ Female' : 'Not set'}
+          </Text>
+        </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Unit Preference</Text>
+          <Text style={styles.infoValue}>
+            {user?.preferredUnit === 'cm' ? 'Centimeters (cm)' : 'Inches (in)'}
+          </Text>
+        </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Member Since</Text>
+          <Text style={styles.infoValue}>{joinDate || '—'}</Text>
+        </View>
       </View>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutText}>🚪 Logout</Text>
+      {/* Danger zone */}
+      <TouchableOpacity style={styles.resetButton} onPress={handleResetData}>
+        <Text style={styles.resetText}>🗑️ Reset All Data</Text>
       </TouchableOpacity>
 
-      <Text style={styles.versionText}>Version 1.0.0</Text>
+      <Text style={styles.versionText}>Tailor-X v1.0.0</Text>
+
+      {/* ============================================================ */}
+      {/* EDIT PROFILE MODAL */}
+      {/* ============================================================ */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Profile</Text>
+            <TouchableOpacity onPress={saveProfile}>
+              <Text style={styles.modalSave}>Save</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody}>
+            {/* Name */}
+            <Text style={styles.fieldLabel}>Name</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Your name"
+              autoCapitalize="words"
+            />
+
+            {/* Email */}
+            <Text style={styles.fieldLabel}>Email</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editEmail}
+              onChangeText={setEditEmail}
+              placeholder="you@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            {/* Gender */}
+            <Text style={styles.fieldLabel}>Gender (affects measurement calibration)</Text>
+            <View style={styles.genderRow}>
+              {(['male', 'female', 'other'] as const).map((g) => (
+                <TouchableOpacity
+                  key={g}
+                  style={[
+                    styles.genderOption,
+                    editGender === g && styles.genderOptionActive,
+                  ]}
+                  onPress={() => setEditGender(g)}
+                >
+                  <Text
+                    style={[
+                      styles.genderOptionText,
+                      editGender === g && styles.genderOptionTextActive,
+                    ]}
+                  >
+                    {g === 'male' ? '♂ Male' : g === 'female' ? '♀ Female' : '⚪ Other'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Height */}
+            <Text style={styles.fieldLabel}>Height (cm) — critical for accuracy</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editHeight}
+              onChangeText={setEditHeight}
+              placeholder="e.g. 175"
+              keyboardType="numeric"
+            />
+            <Text style={styles.fieldHint}>
+              Your height is the primary calibration reference. Without it, measurement error is ±5cm instead of ±1-2cm.
+            </Text>
+
+            {/* Weight */}
+            <Text style={styles.fieldLabel}>Weight (kg)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editWeight}
+              onChangeText={setEditWeight}
+              placeholder="e.g. 70"
+              keyboardType="numeric"
+            />
+
+            {/* Unit */}
+            <Text style={styles.fieldLabel}>Preferred Unit</Text>
+            <View style={styles.genderRow}>
+              {(['cm', 'inch'] as const).map((u) => (
+                <TouchableOpacity
+                  key={u}
+                  style={[
+                    styles.genderOption,
+                    editUnit === u && styles.genderOptionActive,
+                  ]}
+                  onPress={() => setEditUnit(u)}
+                >
+                  <Text
+                    style={[
+                      styles.genderOptionText,
+                      editUnit === u && styles.genderOptionTextActive,
+                    ]}
+                  >
+                    {u === 'cm' ? '📏 Centimeters' : '📐 Inches'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -161,9 +332,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Theme.spacing.md,
   },
-  avatarContainer: {
-    marginBottom: Theme.spacing.md,
-  },
   avatar: {
     width: 100,
     height: 100,
@@ -171,6 +339,7 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: Theme.spacing.md,
     ...Theme.shadows.medium,
   },
   avatarText: {
@@ -189,40 +358,64 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.secondary,
     marginBottom: Theme.spacing.lg,
   },
-  statsContainer: {
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    paddingHorizontal: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.md,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: Theme.fontSize.xl,
+    fontSize: Theme.fontSize.lg,
     fontWeight: Theme.fontWeight.bold,
     color: Theme.colors.primary,
-    marginBottom: Theme.spacing.xs,
+    marginBottom: 2,
   },
   statLabel: {
-    fontSize: Theme.fontSize.sm,
+    fontSize: Theme.fontSize.xs,
     color: Theme.colors.text.secondary,
   },
   statDivider: {
     width: 1,
-    height: 40,
+    height: 36,
     backgroundColor: Theme.colors.border,
+    marginHorizontal: Theme.spacing.sm,
+  },
+  completeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF8E1',
     marginHorizontal: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
+    padding: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+  },
+  completeBannerIcon: {
+    fontSize: 24,
+    marginRight: Theme.spacing.sm,
+  },
+  completeBannerTitle: {
+    fontSize: Theme.fontSize.sm,
+    fontWeight: Theme.fontWeight.bold,
+    color: Theme.colors.text.primary,
+  },
+  completeBannerText: {
+    fontSize: Theme.fontSize.xs,
+    color: Theme.colors.text.secondary,
+    marginTop: 2,
   },
   editProfileButton: {
     backgroundColor: Theme.colors.primary,
     paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
     borderRadius: Theme.borderRadius.lg,
     marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
     alignItems: 'center',
     ...Theme.shadows.medium,
   },
@@ -231,43 +424,32 @@ const styles = StyleSheet.create({
     fontSize: Theme.fontSize.md,
     fontWeight: Theme.fontWeight.semibold,
   },
-  menuContainer: {
+  infoSection: {
+    marginHorizontal: Theme.spacing.lg,
+    marginBottom: Theme.spacing.lg,
+  },
+  infoCard: {
     backgroundColor: Theme.colors.white,
-    marginBottom: Theme.spacing.md,
-  },
-  menuItem: {
+    padding: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.lg,
+    marginBottom: Theme.spacing.sm,
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.border,
+    ...Theme.shadows.small,
   },
-  menuIcon: {
-    fontSize: 24,
-    marginRight: Theme.spacing.md,
-  },
-  menuContent: {
-    flex: 1,
-  },
-  menuTitle: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
-  },
-  menuSubtitle: {
+  infoLabel: {
     fontSize: Theme.fontSize.sm,
     color: Theme.colors.text.secondary,
   },
-  menuArrow: {
-    fontSize: 32,
-    color: Theme.colors.text.light,
+  infoValue: {
+    fontSize: Theme.fontSize.md,
+    fontWeight: Theme.fontWeight.semibold,
+    color: Theme.colors.text.primary,
   },
-  logoutButton: {
+  resetButton: {
     backgroundColor: Theme.colors.white,
     paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
     borderRadius: Theme.borderRadius.lg,
     marginHorizontal: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
@@ -275,15 +457,102 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Theme.colors.error,
   },
-  logoutText: {
+  resetText: {
     color: Theme.colors.error,
     fontSize: Theme.fontSize.md,
     fontWeight: Theme.fontWeight.semibold,
+  },
+  menuArrow: {
+    fontSize: 28,
+    color: Theme.colors.text.light,
+    marginLeft: Theme.spacing.sm,
   },
   versionText: {
     textAlign: 'center',
     fontSize: Theme.fontSize.xs,
     color: Theme.colors.text.light,
     paddingVertical: Theme.spacing.lg,
+    paddingBottom: Theme.spacing.xxl,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: Theme.colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Theme.spacing.lg,
+    backgroundColor: Theme.colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.border,
+  },
+  modalCancel: {
+    fontSize: Theme.fontSize.md,
+    color: Theme.colors.text.secondary,
+  },
+  modalTitle: {
+    fontSize: Theme.fontSize.lg,
+    fontWeight: Theme.fontWeight.bold,
+    color: Theme.colors.text.primary,
+  },
+  modalSave: {
+    fontSize: Theme.fontSize.md,
+    fontWeight: Theme.fontWeight.bold,
+    color: Theme.colors.primary,
+  },
+  modalBody: {
+    padding: Theme.spacing.lg,
+  },
+  fieldLabel: {
+    fontSize: Theme.fontSize.sm,
+    fontWeight: Theme.fontWeight.semibold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.xs,
+    marginTop: Theme.spacing.md,
+  },
+  fieldHint: {
+    fontSize: Theme.fontSize.xs,
+    color: Theme.colors.text.light,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  textInput: {
+    backgroundColor: Theme.colors.white,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.md,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+    fontSize: Theme.fontSize.md,
+    color: Theme.colors.text.primary,
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: Theme.spacing.sm,
+  },
+  genderOption: {
+    flex: 1,
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.md,
+    borderWidth: 2,
+    borderColor: Theme.colors.border,
+    alignItems: 'center',
+    backgroundColor: Theme.colors.white,
+  },
+  genderOptionActive: {
+    borderColor: Theme.colors.primary,
+    backgroundColor: '#F0ECFF',
+  },
+  genderOptionText: {
+    fontSize: Theme.fontSize.sm,
+    color: Theme.colors.text.secondary,
+    fontWeight: Theme.fontWeight.medium,
+  },
+  genderOptionTextActive: {
+    color: Theme.colors.primary,
+    fontWeight: Theme.fontWeight.bold,
   },
 });

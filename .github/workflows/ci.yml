@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: xfit/package-lock.json
+
+      - name: Install dependencies
+        working-directory: xfit
+        run: npm ci
+
+      - name: TypeScript check
+        working-directory: xfit
+        run: npx tsc --noEmit
+
+      - name: Lint
+        working-directory: xfit
+        run: npx eslint src/ --ext .ts,.tsx --max-warnings 0
+        continue-on-error: true  # ESLint not yet configured — will enable later
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: xfit/package-lock.json
+
+      - name: Install dependencies
+        working-directory: xfit
+        run: npm ci
+
+      - name: Run tests
+        working-directory: xfit
+        run: npx jest --ci --coverage --maxWorkers=2
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: xfit/coverage/
+          retention-days: 14
+
+  build-android:
+    name: Build Android (Preview)
+    needs: [lint-and-typecheck, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: xfit/package-lock.json
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: xfit
+        run: npm ci
+
+      - name: Build preview APK
+        working-directory: xfit
+        run: eas build --platform android --profile preview --non-interactive
+
+  build-ios:
+    name: Build iOS (Preview)
+    needs: [lint-and-typecheck, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: xfit/package-lock.json
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: xfit
+        run: npm ci
+
+      - name: Build iOS
+        working-directory: xfit
+        run: eas build --platform ios --profile preview --non-interactive

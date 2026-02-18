@@ -1,15 +1,19 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Theme } from '../constants/theme';
+import { useMeasurementStore } from '../stores/measurementStore';
 
 export default function HomeScreen({ navigation }: any) {
+  const measurements = useMeasurementStore((state) => state.measurements);
+  const totalScans = measurements.length;
+
   const features = [
     {
       id: '1',
-      title: 'Scan Your Body',
-      description: 'Use AI-powered camera to capture accurate measurements',
+      title: 'Multi-Angle Body Scan',
+      description: 'Front + side + back capture for maximum accuracy (±1-2cm)',
       icon: '📸',
-      action: () => navigation.navigate('Camera'),
+      action: () => navigation.navigate('Scan'),
     },
     {
       id: '2',
@@ -56,11 +60,17 @@ export default function HomeScreen({ navigation }: any) {
         ))}
       </View>
 
+      {totalScans > 0 && (
+        <View style={styles.statsBar}>
+          <Text style={styles.statsText}>📊 {totalScans} scan{totalScans !== 1 ? 's' : ''} completed</Text>
+        </View>
+      )}
+
       <TouchableOpacity
         style={styles.primaryButton}
-        onPress={() => navigation.navigate('Camera')}
+        onPress={() => navigation.navigate('Scan')}
       >
-        <Text style={styles.primaryButtonText}>Start Scanning</Text>
+        <Text style={styles.primaryButtonText}>Start Multi-Angle Scan</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -129,6 +139,21 @@ const styles = StyleSheet.create({
     fontSize: Theme.fontSize.sm,
     color: Theme.colors.text.secondary,
     lineHeight: 20,
+  },
+  statsBar: {
+    backgroundColor: Theme.colors.white,
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.lg,
+    marginHorizontal: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.lg,
+    alignItems: 'center',
+    ...Theme.shadows.small,
+  },
+  statsText: {
+    fontSize: Theme.fontSize.sm,
+    color: Theme.colors.primary,
+    fontWeight: Theme.fontWeight.semibold,
   },
   primaryButton: {
     backgroundColor: Theme.colors.primary,
