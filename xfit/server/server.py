@@ -19,13 +19,13 @@ Endpoints:
     GET  /health        - Health check
     POST /v1/pose/detect - Detect pose landmarks from base64 image
 """
+from __future__ import annotations
 
 import base64
 import io
 import time
 import os
 import logging
-from __future__ import annotations
 from typing import Optional, Any
 
 import numpy as np
