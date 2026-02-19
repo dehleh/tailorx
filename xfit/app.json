@@ -49,12 +49,6 @@
         "projectId": "bcded85f-e28b-41c6-9b12-29915ba94a2f"
       }
     },
-    "owner": "tailor-xs-organization",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/bcded85f-e28b-41c6-9b12-29915ba94a2f"
-    }
+    "owner": "tailor-xs-organization"
   }
 }
