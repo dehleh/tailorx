@@ -83,7 +83,7 @@ class PoseProcessor {
     const startTime = Date.now();
 
     // Try cloud processing first (most accurate)
-    if (this.cloudConfig.apiKey && this.isCloudAvailable !== false) {
+    if (this.isCloudAvailable !== false) {
       try {
         const result = await this.processWithCloud(imageUri, captureType);
         this.isCloudAvailable = true;
@@ -136,17 +136,16 @@ class PoseProcessor {
    * Check if cloud processing is available
    */
   async checkCloudAvailability(): Promise<boolean> {
-    if (!this.cloudConfig.apiKey) {
-      this.isCloudAvailable = false;
-      return false;
-    }
-
     try {
-      const response = await fetch(`${this.cloudConfig.apiUrl}/health`, {
+      const baseUrl = this.cloudConfig.apiUrl.replace(/\/detect\/?$/, '').replace(/\/+$/, '');
+      const healthUrl = `${baseUrl}/health`;
+      const headers: Record<string, string> = {};
+      if (this.cloudConfig.apiKey) {
+        headers['Authorization'] = `Bearer ${this.cloudConfig.apiKey}`;
+      }
+      const response = await fetch(healthUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.cloudConfig.apiKey}`,
-        },
+        headers,
         signal: AbortSignal.timeout(5000),
       });
       this.isCloudAvailable = response.ok;
@@ -174,12 +173,15 @@ class PoseProcessor {
 
     for (let attempt = 0; attempt <= this.cloudConfig.retries; attempt++) {
       try {
-        const response = await fetch(`${this.cloudConfig.apiUrl}/detect`, {
-          method: 'POST',
-          headers: {
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.cloudConfig.apiKey}`,
-          },
+          };
+          if (this.cloudConfig.apiKey) {
+            headers['Authorization'] = `Bearer ${this.cloudConfig.apiKey}`;
+          }
+          const response = await fetch(`${this.cloudConfig.apiUrl}/detect`, {
+          method: 'POST',
+          headers,
           body: JSON.stringify({
             image: base64,
             captureType,
