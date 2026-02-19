@@ -25,7 +25,8 @@ import io
 import time
 import os
 import logging
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -114,9 +115,9 @@ app.add_middleware(
 # POSE DETECTOR (lazy init)
 # ============================================================
 
-_detector: Optional[vision.PoseLandmarker] = None
+_detector: Any = None
 
-def get_detector() -> vision.PoseLandmarker:
+def get_detector() -> Any:
     """Lazy-load the MediaPipe Pose Landmarker model."""
     global _detector
     if _detector is None:

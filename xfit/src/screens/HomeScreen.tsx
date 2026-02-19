@@ -1,11 +1,20 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Theme } from '../constants/theme';
 import { useMeasurementStore } from '../stores/measurementStore';
+import { poseProcessor } from '../services/poseProcessor';
 
 export default function HomeScreen({ navigation }: any) {
   const measurements = useMeasurementStore((state) => state.measurements);
   const totalScans = measurements.length;
+
+  // Check pose server connectivity on mount
+  const [poseStatus, setPoseStatus] = useState<'checking' | 'cloud' | 'fallback'>('checking');
+  useEffect(() => {
+    poseProcessor.checkCloudAvailability().then((available) => {
+      setPoseStatus(available ? 'cloud' : 'fallback');
+    });
+  }, []);
 
   const features = [
     {
@@ -43,6 +52,24 @@ export default function HomeScreen({ navigation }: any) {
         <Text style={styles.heroSubtitle}>
           Using advanced AI technology to ensure the perfect fit for your clothing
         </Text>
+      </View>
+
+      {/* Pose server status */}
+      <View style={[
+        styles.statusBanner,
+        poseStatus === 'cloud' && styles.statusBannerGood,
+        poseStatus === 'fallback' && styles.statusBannerWarn,
+      ]}>
+        <Text style={styles.statusText}>
+          {poseStatus === 'checking' && '⏳ Checking pose server...'}
+          {poseStatus === 'cloud' && '✅ MediaPipe Server Connected — ±1-2cm accuracy'}
+          {poseStatus === 'fallback' && '⚠️ Pose server offline — using estimation (±4-5cm)'}
+        </Text>
+        {poseStatus === 'fallback' && (
+          <Text style={styles.statusHint}>
+            Deploy the server for best accuracy. See server/README.md
+          </Text>
+        )}
       </View>
 
       <View style={styles.featuresContainer}>
@@ -154,6 +181,33 @@ const styles = StyleSheet.create({
     fontSize: Theme.fontSize.sm,
     color: Theme.colors.primary,
     fontWeight: Theme.fontWeight.semibold,
+  },
+  statusBanner: {
+    marginHorizontal: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
+    padding: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.lg,
+    backgroundColor: Theme.colors.white,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  statusBannerGood: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+  },
+  statusBannerWarn: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  statusText: {
+    fontSize: Theme.fontSize.sm,
+    fontWeight: Theme.fontWeight.medium,
+    color: Theme.colors.text.primary,
+  },
+  statusHint: {
+    fontSize: Theme.fontSize.xs,
+    color: Theme.colors.text.secondary,
+    marginTop: 4,
   },
   primaryButton: {
     backgroundColor: Theme.colors.primary,

@@ -1,0 +1,8 @@
+{
+  "files.exclude": {
+    "**/node_modules": true
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "python.analysis.extraPaths": [],
+  "python.analysis.ignore": ["server/**"]
+}

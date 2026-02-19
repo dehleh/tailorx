@@ -31,6 +31,31 @@ For local development with a physical device, use your LAN IP (e.g. `http://192.
 
 ## Deploy to Production
 
+### Railway (Recommended — easiest)
+
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+railway login
+
+# Deploy
+cd server
+railway init            # Create project, name it "tailorx-pose"
+railway up              # Deploys using Dockerfile
+
+# Get your public URL
+railway domain          # e.g. https://tailorx-pose-production-xxxx.up.railway.app
+```
+
+Then create `xfit/.env`:
+```env
+EXPO_PUBLIC_POSE_API_URL=https://tailorx-pose-production-xxxx.up.railway.app/v1/pose
+```
+
+Optional: set `TAILORX_API_KEY` in Railway dashboard → Variables.
+
+**Cost:** Free tier = 500 hrs/mo. Hobby ($5/mo) = always on.
+
 ### Docker
 
 ```bash
@@ -39,7 +64,7 @@ docker build -t tailorx-pose .
 docker run -p 8080:8080 -e TAILORX_API_KEY=your-secret tailorx-pose
 ```
 
-### Google Cloud Run (recommended)
+### Google Cloud Run
 
 ```bash
 gcloud run deploy tailorx-pose \

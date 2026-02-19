@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system dependencies for MediaPipe
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,4 +18,5 @@ RUN python -c "import urllib.request; urllib.request.urlretrieve('https://storag
 
 EXPOSE 8080
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
+# Railway sets PORT env var automatically. Uvicorn reads it via shell expansion.
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"]
