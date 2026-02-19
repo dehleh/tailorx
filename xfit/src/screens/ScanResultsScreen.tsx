@@ -1,11 +1,11 @@
 /**
- * Scan Results Screen
- * 
- * Shows detailed measurement results after a body scan:
- * - Overall accuracy badge
- * - Per-measurement breakdown with confidence
- * - Accuracy improvement recommendations
- * - Save confirmation & navigation options
+ * Scan Results Screen — polished, user-friendly design
+ *
+ * - Clean hero header with large accuracy bubble
+ * - Per-measurement cards with soft confidence badges (no scary red)
+ * - Floating-point numbers properly rounded
+ * - Actionable improvement tips
+ * - Export & navigation
  */
 
 import React, { useMemo, useState } from 'react';
@@ -15,11 +15,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Share,
 } from 'react-native';
 import { Theme } from '../constants/theme';
-import { AccuracyBadge, AccuracyReportCard } from '../components/AccuracyIndicator';
 import { MeasurementResult } from '../services/measurementEngine';
 import { AccuracyReport } from '../services/accuracyEngine';
 import { useUserStore } from '../stores/userStore';
@@ -38,29 +36,73 @@ interface ScanResultsScreenProps {
 // MEASUREMENT DISPLAY CONFIG
 // ============================================================
 
-const MEASUREMENT_META: Record<string, { icon: string; label: string; isWeight?: boolean }> = {
-  height: { icon: '📏', label: 'Height' },
-  weight: { icon: '⚖️', label: 'Weight', isWeight: true },
+const MEASUREMENT_META: Record<
+  string,
+  { icon: string; label: string; isWeight?: boolean }
+> = {
   chest: { icon: '👔', label: 'Chest' },
   waist: { icon: '👖', label: 'Waist' },
   hips: { icon: '🩳', label: 'Hips' },
   shoulders: { icon: '👕', label: 'Shoulders' },
   neck: { icon: '👔', label: 'Neck' },
+  height: { icon: '📏', label: 'Height' },
   sleeve: { icon: '🧥', label: 'Sleeve' },
   inseam: { icon: '👖', label: 'Inseam' },
   thigh: { icon: '🦵', label: 'Thigh' },
   calf: { icon: '👟', label: 'Calf' },
+  weight: { icon: '⚖️', label: 'Weight', isWeight: true },
 };
 
-export default function ScanResultsScreen({ navigation, route }: ScanResultsScreenProps) {
+// ============================================================
+// HELPERS
+// ============================================================
+
+/** Round to 1 decimal, avoids floating-point noise like 10.800000000000004 */
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** Score → friendly label, colour, background, emoji */
+function getScoreInfo(score: number) {
+  if (score >= 85)
+    return { label: 'Excellent', color: '#10B981', bg: '#D1FAE5', emoji: '🎯' };
+  if (score >= 70)
+    return { label: 'Good', color: '#F59E0B', bg: '#FEF3C7', emoji: '👍' };
+  if (score >= 55)
+    return { label: 'Fair', color: '#F97316', bg: '#FFEDD5', emoji: '📐' };
+  return { label: 'Estimate', color: '#8B5CF6', bg: '#EDE9FE', emoji: '🔬' };
+}
+
+/** Per-measurement confidence → soft badge (purple "Estimated" instead of red "Low") */
+function getConfidenceInfo(conf: number) {
+  if (conf >= 80)
+    return { label: 'High', color: '#10B981', bg: '#ECFDF5' };
+  if (conf >= 60)
+    return { label: 'Medium', color: '#F59E0B', bg: '#FFFBEB' };
+  return { label: 'Estimated', color: '#8B5CF6', bg: '#F5F3FF' };
+}
+
+export default function ScanResultsScreen({
+  navigation,
+  route,
+}: ScanResultsScreenProps) {
   const { result, accuracyReport } = route.params;
   const user = useUserStore((state) => state.user);
-  const [unit, setUnit] = useState<'cm' | 'inch'>(user?.preferredUnit || 'cm');
+  const [unit, setUnit] = useState<'cm' | 'inch'>(
+    user?.preferredUnit || 'cm',
+  );
 
-  const convertToInch = (cm: number) => (cm / 2.54).toFixed(1);
-  const displayValue = (cm: number, isWeight?: boolean) => {
-    if (isWeight) return `${cm} kg`;
-    return unit === 'cm' ? `${cm.toFixed(1)} cm` : `${convertToInch(cm)} in`;
+  /** Format a measurement value with proper rounding */
+  const formatValue = (cm: number, isWeight?: boolean) => {
+    if (isWeight) return `${round1(cm)} kg`;
+    return unit === 'cm'
+      ? `${round1(cm)} cm`
+      : `${round1(cm / 2.54)} in`;
+  };
+
+  /** Format the error range with proper rounding */
+  const formatError = (errCm: number) => {
+    const v =
+      unit === 'cm' ? round1(errCm) : round1(errCm / 2.54);
+    return `±${v} ${unit === 'cm' ? 'cm' : 'in'}`;
   };
 
   // Build measurement list from result
@@ -82,8 +124,10 @@ export default function ScanResultsScreen({ navigation, route }: ScanResultsScre
           isWeight: meta.isWeight,
         };
       })
-      .sort((a, b) => b.confidence - a.confidence); // Show most confident first
+      .sort((a, b) => b.confidence - a.confidence);
   }, [result, accuracyReport]);
+
+  const scoreInfo = getScoreInfo(result.overallAccuracy);
 
   // ============================================================
   // EXPORT
@@ -91,27 +135,22 @@ export default function ScanResultsScreen({ navigation, route }: ScanResultsScre
 
   const handleExport = async () => {
     const lines = [
-      'Tailor-X Body Measurements',
+      '📐 Tailor-X Body Measurements',
       `Date: ${new Date().toLocaleDateString()}`,
-      `Overall Accuracy: ${result.overallAccuracy}%`,
-      `Engine: ${result.metadata.engineVersion}`,
+      `Accuracy: ${result.overallAccuracy}%`,
       '',
-      'Measurements:',
-      ...measurementList.map(m =>
-        `  ${m.label}: ${displayValue(m.value, m.isWeight)} (±${m.estimatedError}cm, ${m.confidence}% conf)`
+      ...measurementList.map(
+        (m) =>
+          `${m.label}: ${formatValue(m.value, m.isWeight)} (${formatError(m.estimatedError)})`,
       ),
     ];
-
-    if (result.warnings.length > 0) {
-      lines.push('', 'Warnings:', ...result.warnings.map(w => `  ⚠️ ${w}`));
-    }
 
     try {
       await Share.share({
         title: 'Tailor-X Measurements',
         message: lines.join('\n'),
       });
-    } catch (e) {
+    } catch {
       // User cancelled
     }
   };
@@ -121,124 +160,165 @@ export default function ScanResultsScreen({ navigation, route }: ScanResultsScre
   // ============================================================
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Header with accuracy */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Scan Results</Text>
-        <Text style={styles.headerSubtitle}>
-          {result.metadata.anglesUsed.length} angle(s) • {result.metadata.processingTimeMs}ms
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* ── Hero header ── */}
+      <View style={styles.hero}>
+        <Text style={styles.heroTitle}>Your Measurements</Text>
+        <Text style={styles.heroSubtitle}>
+          {measurementList.length} measurements captured
         </Text>
-        <View style={styles.accuracyBadgeRow}>
-          <AccuracyBadge accuracy={result.overallAccuracy} size="large" />
+
+        <View style={[styles.scoreBubble, { backgroundColor: scoreInfo.bg }]}>
+          <Text style={styles.scoreEmoji}>{scoreInfo.emoji}</Text>
+          <Text style={[styles.scoreValue, { color: scoreInfo.color }]}>
+            {result.overallAccuracy}%
+          </Text>
+          <Text style={[styles.scoreLabel, { color: scoreInfo.color }]}>
+            {scoreInfo.label}
+          </Text>
         </View>
 
-        {result.warnings.length > 0 && (
-          <View style={styles.warningsBox}>
-            {result.warnings.map((w, i) => (
-              <Text key={i} style={styles.warningText}>⚠️ {w}</Text>
-            ))}
-          </View>
-        )}
+        <Text style={styles.heroMeta}>
+          {result.metadata.anglesUsed.length} angle
+          {result.metadata.anglesUsed.length !== 1 ? 's' : ''} captured
+        </Text>
       </View>
 
-      {/* Unit toggle */}
+      {/* ── Unit toggle ── */}
       <View style={styles.unitRow}>
-        <TouchableOpacity
-          style={[styles.unitButton, unit === 'cm' && styles.unitButtonActive]}
-          onPress={() => setUnit('cm')}
-        >
-          <Text style={[styles.unitButtonText, unit === 'cm' && styles.unitButtonTextActive]}>CM</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.unitButton, unit === 'inch' && styles.unitButtonActive]}
-          onPress={() => setUnit('inch')}
-        >
-          <Text style={[styles.unitButtonText, unit === 'inch' && styles.unitButtonTextActive]}>INCH</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Measurement cards */}
-      <View style={styles.measurementsSection}>
-        {measurementList.map((m) => (
-          <View key={m.key} style={styles.measurementCard}>
-            <View style={styles.measurementLeft}>
-              <Text style={styles.measurementIcon}>{m.icon}</Text>
-              <View>
-                <Text style={styles.measurementLabel}>{m.label}</Text>
-                <Text style={[
-                  styles.reliabilityText,
-                  m.reliability === 'high' && { color: Theme.colors.success },
-                  m.reliability === 'medium' && { color: Theme.colors.warning },
-                  m.reliability === 'low' && { color: Theme.colors.error },
-                ]}>
-                  {m.reliability === 'high' ? '✓ High' :
-                   m.reliability === 'medium' ? '~ Medium' : '! Low'} confidence
-                </Text>
-              </View>
-            </View>
-            <View style={styles.measurementRight}>
-              <Text style={styles.measurementValue}>
-                {displayValue(m.value, m.isWeight)}
-              </Text>
-              <Text style={styles.errorRange}>±{m.estimatedError}cm</Text>
-            </View>
-          </View>
+        {(['cm', 'inch'] as const).map((u) => (
+          <TouchableOpacity
+            key={u}
+            style={[
+              styles.unitButton,
+              unit === u && styles.unitButtonActive,
+            ]}
+            onPress={() => setUnit(u)}
+          >
+            <Text
+              style={[
+                styles.unitButtonText,
+                unit === u && styles.unitButtonTextActive,
+              ]}
+            >
+              {u === 'cm' ? 'CM' : 'INCH'}
+            </Text>
+          </TouchableOpacity>
         ))}
       </View>
 
-      {/* Accuracy report */}
-      <View style={styles.reportSection}>
-        <AccuracyReportCard
-          overallAccuracy={result.overallAccuracy}
-          recommendations={accuracyReport.recommendations}
-          perMeasurement={accuracyReport.perMeasurement}
-          onImprove={() => navigation.navigate('Scan')}
-        />
+      {/* ── Measurement cards ── */}
+      <View style={styles.cardsSection}>
+        {measurementList.map((m) => {
+          const ci = getConfidenceInfo(m.confidence);
+          return (
+            <View key={m.key} style={styles.card}>
+              <View style={styles.cardLeft}>
+                <View style={styles.iconCircle}>
+                  <Text style={styles.cardIcon}>{m.icon}</Text>
+                </View>
+                <View style={styles.cardInfo}>
+                  <Text style={styles.cardLabel}>{m.label}</Text>
+                  <View
+                    style={[styles.confBadge, { backgroundColor: ci.bg }]}
+                  >
+                    <Text style={[styles.confBadgeText, { color: ci.color }]}>
+                      {ci.label}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.cardRight}>
+                <Text style={styles.cardValue}>
+                  {formatValue(m.value, m.isWeight)}
+                </Text>
+                <Text style={styles.cardError}>
+                  {formatError(m.estimatedError)}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
       </View>
 
-      {/* Improvement potential */}
+      {/* ── Tips to improve ── */}
+      {accuracyReport.recommendations.length > 0 && (
+        <View style={styles.tipsCard}>
+          <Text style={styles.tipsTitle}>💡 Tips for better accuracy</Text>
+          {accuracyReport.recommendations.slice(0, 3).map((rec, i) => (
+            <View key={i} style={styles.tipRow}>
+              <View style={styles.tipDot} />
+              <Text style={styles.tipText}>{rec}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* ── Improvement potential ── */}
       {accuracyReport.improvementPotential && (
         <View style={styles.improvementSection}>
-          <Text style={styles.improvementTitle}>📈 Improvement Potential</Text>
-          <View style={styles.improvementCards}>
-            <ImprovementCard
+          <Text style={styles.sectionTitle}>📈 You could reach</Text>
+          <View style={styles.improvementRow}>
+            <ImprovementChip
               label="With Calibration"
               value={accuracyReport.improvementPotential.withCalibration}
               current={result.overallAccuracy}
             />
-            <ImprovementCard
-              label="With Side View"
+            <ImprovementChip
+              label="Side View"
               value={accuracyReport.improvementPotential.withSideView}
               current={result.overallAccuracy}
             />
-            <ImprovementCard
-              label="Multiple Scans"
-              value={accuracyReport.improvementPotential.withMultipleScans}
+            <ImprovementChip
+              label="Multi-Scan"
+              value={
+                accuracyReport.improvementPotential.withMultipleScans
+              }
               current={result.overallAccuracy}
             />
           </View>
         </View>
       )}
 
-      {/* Action buttons */}
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.exportButton} onPress={handleExport}>
-          <Text style={styles.exportButtonText}>📤 Share Results</Text>
-        </TouchableOpacity>
+      {/* ── Warnings (non-alarming) ── */}
+      {result.warnings.length > 0 && (
+        <View style={styles.warningsCard}>
+          {result.warnings.map((w, i) => (
+            <Text key={i} style={styles.warningText}>
+              💬 {w}
+            </Text>
+          ))}
+        </View>
+      )}
 
+      {/* ── Actions ── */}
+      <View style={styles.actions}>
         <TouchableOpacity
-          style={styles.primaryButton}
+          style={styles.primaryBtn}
           onPress={() => navigation.navigate('Measurements')}
         >
-          <Text style={styles.primaryButtonText}>View All Measurements</Text>
+          <Text style={styles.primaryBtnText}>
+            📏 View All Measurements
+          </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => navigation.navigate('Scan')}
-        >
-          <Text style={styles.secondaryButtonText}>📸 Scan Again</Text>
-        </TouchableOpacity>
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.outlineBtn}
+            onPress={handleExport}
+          >
+            <Text style={styles.outlineBtnText}>📤 Share</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.outlineBtn}
+            onPress={() => navigation.navigate('Scan')}
+          >
+            <Text style={styles.outlineBtnText}>📸 Rescan</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </ScrollView>
   );
@@ -248,7 +328,7 @@ export default function ScanResultsScreen({ navigation, route }: ScanResultsScre
 // SUB-COMPONENTS
 // ============================================================
 
-function ImprovementCard({
+function ImprovementChip({
   label,
   value,
   current,
@@ -261,10 +341,10 @@ function ImprovementCard({
   if (delta <= 0) return null;
 
   return (
-    <View style={styles.improvementCard}>
-      <Text style={styles.improvementLabel}>{label}</Text>
-      <Text style={styles.improvementValue}>+{delta}%</Text>
-      <Text style={styles.improvementTarget}>→ {value}%</Text>
+    <View style={styles.improvementChip}>
+      <Text style={styles.improvementChipDelta}>+{delta}%</Text>
+      <Text style={styles.improvementChipTarget}>{value}%</Text>
+      <Text style={styles.improvementChipLabel}>{label}</Text>
     </View>
   );
 }
@@ -278,190 +358,274 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.colors.background,
   },
-  header: {
+
+  // ── Hero ──
+  hero: {
     backgroundColor: Theme.colors.white,
-    padding: Theme.spacing.lg,
+    paddingTop: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.lg,
     alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    ...Theme.shadows.small,
   },
-  headerTitle: {
-    fontSize: Theme.fontSize.xxl,
-    fontWeight: Theme.fontWeight.bold,
+  heroTitle: {
+    fontSize: 26,
+    fontWeight: '700' as const,
     color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
   },
-  headerSubtitle: {
-    fontSize: Theme.fontSize.sm,
+  heroSubtitle: {
+    fontSize: 14,
     color: Theme.colors.text.secondary,
-    marginBottom: Theme.spacing.md,
+    marginTop: 4,
+    marginBottom: Theme.spacing.lg,
   },
-  accuracyBadgeRow: {
+  scoreBubble: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: Theme.spacing.sm,
   },
-  warningsBox: {
-    backgroundColor: '#FEF3C7',
-    padding: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.md,
-    marginTop: Theme.spacing.sm,
-    width: '100%',
-  },
-  warningText: {
-    fontSize: Theme.fontSize.xs,
-    color: '#92400E',
+  scoreEmoji: {
+    fontSize: 24,
     marginBottom: 2,
   },
+  scoreValue: {
+    fontSize: 32,
+    fontWeight: '800' as const,
+  },
+  scoreLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginTop: -2,
+  },
+  heroMeta: {
+    fontSize: 12,
+    color: Theme.colors.text.light,
+  },
+
+  // ── Unit toggle ──
   unitRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    paddingVertical: Theme.spacing.sm,
-    backgroundColor: Theme.colors.white,
-    marginBottom: Theme.spacing.sm,
+    paddingVertical: Theme.spacing.md,
     gap: Theme.spacing.sm,
   },
   unitButton: {
-    paddingVertical: Theme.spacing.xs,
-    paddingHorizontal: Theme.spacing.lg,
-    borderRadius: Theme.borderRadius.full,
-    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 28,
+    borderRadius: 20,
+    borderWidth: 1.5,
     borderColor: Theme.colors.border,
+    backgroundColor: Theme.colors.white,
   },
   unitButtonActive: {
     backgroundColor: Theme.colors.primary,
     borderColor: Theme.colors.primary,
   },
   unitButtonText: {
-    fontSize: Theme.fontSize.sm,
-    fontWeight: Theme.fontWeight.semibold,
+    fontSize: 13,
+    fontWeight: '700' as const,
     color: Theme.colors.text.secondary,
+    letterSpacing: 1,
   },
   unitButtonTextActive: {
     color: Theme.colors.white,
   },
-  measurementsSection: {
+
+  // ── Measurement cards ──
+  cardsSection: {
     paddingHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    marginBottom: Theme.spacing.sm,
   },
-  measurementCard: {
+  card: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: Theme.colors.white,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.sm,
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 10,
     ...Theme.shadows.small,
   },
-  measurementLeft: {
+  cardLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.sm,
+    gap: 12,
   },
-  measurementIcon: {
-    fontSize: 24,
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  measurementLabel: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.medium,
+  cardIcon: {
+    fontSize: 22,
+  },
+  cardInfo: {
+    gap: 4,
+  },
+  cardLabel: {
+    fontSize: 15,
+    fontWeight: '600' as const,
     color: Theme.colors.text.primary,
   },
-  reliabilityText: {
-    fontSize: Theme.fontSize.xs,
-    marginTop: 2,
+  confBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  measurementRight: {
+  confBadgeText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  cardRight: {
     alignItems: 'flex-end',
   },
-  measurementValue: {
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.primary,
+  cardValue: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Theme.colors.text.primary,
   },
-  errorRange: {
-    fontSize: Theme.fontSize.xs,
+  cardError: {
+    fontSize: 11,
     color: Theme.colors.text.light,
     marginTop: 2,
   },
-  reportSection: {
-    paddingHorizontal: Theme.spacing.lg,
+
+  // ── Tips ──
+  tipsCard: {
+    backgroundColor: Theme.colors.white,
+    marginHorizontal: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
+    padding: Theme.spacing.lg,
+    borderRadius: 16,
+    ...Theme.shadows.small,
   },
+  tipsTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Theme.colors.text.primary,
+    marginBottom: 12,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  tipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Theme.colors.primary,
+    marginTop: 6,
+    marginRight: 10,
+  },
+  tipText: {
+    flex: 1,
+    fontSize: 13,
+    color: Theme.colors.text.secondary,
+    lineHeight: 19,
+  },
+
+  // ── Improvement ──
   improvementSection: {
     paddingHorizontal: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
   },
-  improvementTitle: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
     color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.sm,
+    marginBottom: 10,
   },
-  improvementCards: {
+  improvementRow: {
     flexDirection: 'row',
-    gap: Theme.spacing.sm,
+    gap: 10,
   },
-  improvementCard: {
+  improvementChip: {
     flex: 1,
     backgroundColor: Theme.colors.white,
-    padding: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 14,
     alignItems: 'center',
     ...Theme.shadows.small,
   },
-  improvementLabel: {
-    fontSize: Theme.fontSize.xs,
+  improvementChipDelta: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    color: '#10B981',
+  },
+  improvementChipTarget: {
+    fontSize: 12,
     color: Theme.colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 4,
+    marginTop: 2,
   },
-  improvementValue: {
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.success,
-  },
-  improvementTarget: {
-    fontSize: Theme.fontSize.xs,
+  improvementChipLabel: {
+    fontSize: 11,
     color: Theme.colors.text.light,
+    marginTop: 4,
+    textAlign: 'center',
   },
+
+  // ── Warnings (gentle) ──
+  warningsCard: {
+    backgroundColor: '#FFFBEB',
+    marginHorizontal: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
+    padding: Theme.spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  warningText: {
+    fontSize: 13,
+    color: '#92400E',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+
+  // ── Actions ──
   actions: {
     paddingHorizontal: Theme.spacing.lg,
-    paddingBottom: Theme.spacing.xxl,
+    paddingBottom: 40,
   },
-  exportButton: {
-    backgroundColor: Theme.colors.white,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.sm,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Theme.colors.primary,
-  },
-  exportButtonText: {
-    color: Theme.colors.primary,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
-  },
-  primaryButton: {
+  primaryBtn: {
     backgroundColor: Theme.colors.primary,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.sm,
+    paddingVertical: 16,
+    borderRadius: 14,
     alignItems: 'center',
+    marginBottom: 12,
     ...Theme.shadows.medium,
   },
-  primaryButtonText: {
+  primaryBtnText: {
     color: Theme.colors.white,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
+    fontSize: 16,
+    fontWeight: '700' as const,
   },
-  secondaryButton: {
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.sm,
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  outlineBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
     alignItems: 'center',
+    backgroundColor: Theme.colors.white,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.border,
   },
-  secondaryButtonText: {
-    color: Theme.colors.text.secondary,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.medium,
+  outlineBtnText: {
+    color: Theme.colors.text.primary,
+    fontSize: 14,
+    fontWeight: '600' as const,
   },
 });

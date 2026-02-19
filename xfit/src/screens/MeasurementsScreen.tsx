@@ -162,10 +162,11 @@ export default function MeasurementsScreen({ navigation }: any) {
   const measurementData = latestMeasurement.measurements;
   const accuracy = latestMeasurement.accuracy;
 
-  const convertToInch = (cm: number) => (cm / 2.54).toFixed(1);
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const convertToInch = (cm: number) => round1(cm / 2.54);
 
   const displayValue = (cm: number) => {
-    return unit === 'cm' ? `${cm} cm` : `${convertToInch(cm)} in`;
+    return unit === 'cm' ? `${round1(cm)} cm` : `${convertToInch(cm)} in`;
   };
 
   const measurementList = [
@@ -194,7 +195,7 @@ export default function MeasurementsScreen({ navigation }: any) {
       '',
       ...measurementList.map(m =>
         m.isWeight
-          ? `${m.label}: ${m.value} kg`
+          ? `${m.label}: ${round1(m.value)} kg`
           : `${m.label}: ${displayValue(m.value)}`
       ),
     ].filter(Boolean);
@@ -224,12 +225,12 @@ export default function MeasurementsScreen({ navigation }: any) {
           styles.accuracyBanner,
           accuracy.overallScore >= 85 && { backgroundColor: '#D1FAE5', borderColor: '#10B981' },
           accuracy.overallScore >= 70 && accuracy.overallScore < 85 && { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' },
-          accuracy.overallScore < 70 && { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
+          accuracy.overallScore >= 55 && accuracy.overallScore < 70 && { backgroundColor: '#FFEDD5', borderColor: '#F97316' },
+          accuracy.overallScore < 55 && { backgroundColor: '#EDE9FE', borderColor: '#8B5CF6' },
         ]}>
           <Text style={styles.accuracyBannerText}>
-            {accuracy.overallScore >= 85 ? '✅' : accuracy.overallScore >= 70 ? '⚠️' : '❌'}{' '}
-            Accuracy: {accuracy.overallScore}% — {accuracy.anglesUsed.length} angle(s) •{' '}
-            {accuracy.calibrationMethod}
+            {accuracy.overallScore >= 85 ? '🎯' : accuracy.overallScore >= 70 ? '👍' : accuracy.overallScore >= 55 ? '📐' : '🔬'}{' '}
+            {accuracy.overallScore}% accuracy — {accuracy.anglesUsed.length} angle(s)
           </Text>
           {accuracy.warnings.length > 0 && (
             <Text style={styles.accuracyWarning}>
@@ -271,18 +272,18 @@ export default function MeasurementsScreen({ navigation }: any) {
                   {conf !== undefined && (
                     <Text style={[
                       styles.confidenceText,
-                      conf >= 85 && { color: Theme.colors.success },
-                      conf >= 70 && conf < 85 && { color: Theme.colors.warning },
-                      conf < 70 && { color: Theme.colors.error },
+                      conf >= 80 && { color: '#10B981' },
+                      conf >= 60 && conf < 80 && { color: '#F59E0B' },
+                      conf < 60 && { color: '#8B5CF6' },
                     ]}>
-                      {conf}% confidence
+                      {conf >= 80 ? 'High' : conf >= 60 ? 'Medium' : 'Estimated'}
                     </Text>
                   )}
                 </View>
               </View>
               <Text style={styles.measurementValue}>
                 {item.isWeight
-                  ? `${item.value} kg`
+                  ? `${round1(item.value)} kg`
                   : displayValue(item.value)}
               </Text>
             </View>

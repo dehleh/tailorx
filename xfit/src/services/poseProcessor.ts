@@ -139,18 +139,24 @@ class PoseProcessor {
     try {
       const baseUrl = this.cloudConfig.apiUrl.replace(/\/detect\/?$/, '').replace(/\/+$/, '');
       const healthUrl = `${baseUrl}/health`;
+      console.log('[PoseProcessor] Checking cloud at:', healthUrl);
       const headers: Record<string, string> = {};
       if (this.cloudConfig.apiKey) {
         headers['Authorization'] = `Bearer ${this.cloudConfig.apiKey}`;
       }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       const response = await fetch(healthUrl, {
         method: 'GET',
         headers,
-        signal: AbortSignal.timeout(5000),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      console.log('[PoseProcessor] Cloud health response:', response.status);
       this.isCloudAvailable = response.ok;
       return response.ok;
-    } catch {
+    } catch (error) {
+      console.warn('[PoseProcessor] Cloud check failed:', error);
       this.isCloudAvailable = false;
       return false;
     }
@@ -238,49 +244,11 @@ class PoseProcessor {
   // ============================================================
 
   private async processOnDevice(
-    imageUri: string,
-    captureType: string
+    _imageUri: string,
+    _captureType: string
   ): Promise<Omit<PoseProcessingResult, 'processingTimeMs'>> {
-    // On-device MediaPipe Pose detection via native module
-    // Uses @gymbrosinc/react-native-mediapipe-pose (Expo compatible)
-    
-    try {
-      const mediapipePose = require('@gymbrosinc/react-native-mediapipe-pose');
-      
-      // Detect pose from the static image
-      const poseResult = await mediapipePose.detectPoseFromImage(imageUri, {
-        modelComplexity: 2,       // 0=lite, 1=full, 2=heavy
-        enableSegmentation: false,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-
-      if (!poseResult || !poseResult.landmarks || poseResult.landmarks.length === 0) {
-        throw new Error('No pose detected by on-device MediaPipe');
-      }
-
-      // MediaPipe returns normalized landmarks (0-1)
-      const rawLandmarks = poseResult.landmarks[0] || poseResult.landmarks;
-      
-      const landmarks: Landmark[] = rawLandmarks.map((lm: any, i: number) => ({
-        x: lm.x ?? lm.nx ?? 0,
-        y: lm.y ?? lm.ny ?? 0,
-        z: lm.z ?? lm.nz ?? 0,
-        visibility: lm.visibility ?? lm.confidence ?? lm.score ?? 0.8,
-        name: lm.name ?? BLAZEPOSE_LANDMARK_NAMES[i] ?? `landmark_${i}`,
-      }));
-
-      return {
-        landmarks,
-        imageWidth: poseResult.imageWidth || 720,
-        imageHeight: poseResult.imageHeight || 1280,
-        confidence: this.calcAvgConfidence(landmarks),
-        processingMode: 'on_device',
-        modelUsed: 'mediapipe_pose_native',
-      };
-    } catch (error) {
-      throw new Error(`On-device MediaPipe processing failed: ${error}`);
-    }
+    // On-device processing not available — use cloud server instead
+    throw new Error('On-device processing not available. Use cloud server.');
   }
 
   // ============================================================
