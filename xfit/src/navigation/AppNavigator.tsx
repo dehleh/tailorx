@@ -34,7 +34,7 @@ export default function AppNavigator() {
             },
             tabBarLabelStyle: {
               fontSize: 12,
-              fontWeight: '600',
+              fontWeight: '600' as const,
             },
             headerStyle: {
               backgroundColor: Theme.colors.white,
@@ -45,7 +45,7 @@ export default function AppNavigator() {
             },
             headerTitleStyle: {
               fontSize: 18,
-              fontWeight: '700',
+              fontWeight: '700' as const,
               color: Theme.colors.text.primary,
             },
           }}

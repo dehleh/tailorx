@@ -28,7 +28,7 @@ export default function ScanStackNavigator() {
         },
         headerTintColor: Theme.colors.text.primary,
         headerTitleStyle: {
-          fontWeight: '700',
+          fontWeight: '700' as const,
           fontSize: 18,
         },
         headerShadowVisible: false,

@@ -648,7 +648,7 @@ const styles = StyleSheet.create({
   closeText: {
     color: Theme.colors.white,
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '600' as const,
   },
   progressDots: {
     flexDirection: 'row',
@@ -679,13 +679,13 @@ const styles = StyleSheet.create({
   progressCheck: {
     color: Theme.colors.white,
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '700' as const,
   },
   progressLabel: {
     color: Theme.colors.white,
     fontSize: 10,
     marginTop: 4,
-    fontWeight: '500',
+    fontWeight: '500' as const,
     opacity: 0.8,
   },
   bottomBar: {

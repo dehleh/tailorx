@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   },
   checkIcon: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     width: 20,
     textAlign: 'center',
   },
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   issueText: {
     color: '#FFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     textAlign: 'center',
   },
   readyBanner: {
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   readyText: {
     color: '#FFF',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     textAlign: 'center',
   },
   statusBanner: {
@@ -286,6 +286,6 @@ const styles = StyleSheet.create({
   statusText: {
     color: '#FFF',
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '500' as const,
   },
 });

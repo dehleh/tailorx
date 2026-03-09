@@ -162,10 +162,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   value: {
-    fontWeight: '700',
+    fontWeight: '700' as const,
   },
   label: {
-    fontWeight: '500',
+    fontWeight: '500' as const,
     marginTop: 1,
   },
   reportCard: {
