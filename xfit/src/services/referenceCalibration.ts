@@ -9,6 +9,7 @@
  * With calibration:    ±1-2cm error
  */
 
+import * as FileSystem from 'expo-file-system';
 import { REFERENCE_SIZES, CalibrationReference } from './measurementEngine';
 
 // ============================================================
@@ -214,11 +215,8 @@ class ReferenceCalibrationService {
   }
 
   /**
-   * Auto-detect reference object in image (placeholder for ML-based detection)
-   * In production, this would use:
-   * - Edge detection (Canny) to find rectangular objects
-   * - Contour analysis to identify credit cards / paper
-   * - Known aspect ratio matching
+   * Auto-detect reference object in image via server-side edge/contour analysis.
+   * Falls back to manual input if the server is unavailable.
    */
   async detectReferenceObject(
     imageUri: string
@@ -229,21 +227,54 @@ class ReferenceCalibrationService {
     pixelWidth: number;
     pixelHeight: number;
   }> {
-    // TODO: Implement ML-based reference object detection
-    // For now, this requires manual input from user
-    // 
-    // Production implementation options:
-    // 1. Cloud API with OpenCV: Send image to server for edge/contour detection
-    // 2. React Native OpenCV: Use react-native-opencv for on-device detection
-    // 3. Custom TFLite model: Train a model to detect standard reference objects
-    
-    return {
-      detected: false,
-      type: null,
-      bounds: null,
-      pixelWidth: 0,
-      pixelHeight: 0,
-    };
+    const apiUrl = process.env.EXPO_PUBLIC_POSE_API_URL || 'http://localhost:8000/v1/pose';
+    const apiKey = process.env.EXPO_PUBLIC_POSE_API_KEY || '';
+    const baseUrl = apiUrl.replace(/\/pose\/?.*$/, '');
+    const detectUrl = `${baseUrl}/image/detect-reference`;
+
+    try {
+      const base64 = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const response = await fetch(detectUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ image: base64 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.warn('Reference detection server returned', response.status);
+        return { detected: false, type: null, bounds: null, pixelWidth: 0, pixelHeight: 0 };
+      }
+
+      const data = await response.json();
+
+      if (data.detected && data.object_type) {
+        return {
+          detected: true,
+          type: data.object_type as keyof typeof REFERENCE_SIZES,
+          bounds: data.bounds,
+          pixelWidth: data.pixel_width,
+          pixelHeight: data.pixel_height,
+        };
+      }
+
+      return { detected: false, type: null, bounds: null, pixelWidth: 0, pixelHeight: 0 };
+    } catch (error) {
+      console.warn('Reference object detection failed (server unreachable):', error);
+      return { detected: false, type: null, bounds: null, pixelWidth: 0, pixelHeight: 0 };
+    }
   }
 }
 

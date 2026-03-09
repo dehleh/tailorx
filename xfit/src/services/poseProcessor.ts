@@ -117,6 +117,128 @@ class PoseProcessor {
   }
 
   /**
+   * Multi-frame burst processing (#1).
+   * Takes an array of image URIs (3-5 frames captured rapidly),
+   * processes each, and returns a single result with averaged landmarks.
+   * Outlier frames (low confidence or inconsistent) are discarded.
+   */
+  async processBurst(
+    imageUris: string[],
+    captureType: 'front' | 'side' | 'back' = 'front'
+  ): Promise<PoseProcessingResult> {
+    const startTime = Date.now();
+
+    // Process all frames
+    const results: PoseProcessingResult[] = [];
+    for (const uri of imageUris) {
+      try {
+        const result = await this.processImage(uri, captureType);
+        if (result.confidence >= 0.3) {
+          results.push(result);
+        }
+      } catch {
+        // Skip failed frames
+      }
+    }
+
+    if (results.length === 0) {
+      throw new Error('All burst frames failed pose detection');
+    }
+
+    // If only one frame succeeded, return it directly
+    if (results.length === 1) {
+      return { ...results[0], processingTimeMs: Date.now() - startTime };
+    }
+
+    // Discard outlier frames: remove the frame whose landmarks deviate most
+    const filteredResults = this.filterOutlierFrames(results);
+
+    // Average landmarks across remaining frames
+    const avgLandmarks = this.averageLandmarks(filteredResults);
+
+    // Use the best frame's metadata
+    const bestFrame = filteredResults.reduce((a, b) =>
+      a.confidence > b.confidence ? a : b
+    );
+
+    return {
+      landmarks: avgLandmarks,
+      imageWidth: bestFrame.imageWidth,
+      imageHeight: bestFrame.imageHeight,
+      confidence: Math.min(
+        1.0,
+        bestFrame.confidence * (1 + 0.05 * (filteredResults.length - 1))
+      ),
+      processingMode: bestFrame.processingMode,
+      modelUsed: bestFrame.modelUsed,
+      processingTimeMs: Date.now() - startTime,
+    };
+  }
+
+  private filterOutlierFrames(results: PoseProcessingResult[]): PoseProcessingResult[] {
+    if (results.length <= 2) return results;
+
+    // Compute average x,y for key body landmarks across all frames
+    const keyIndices = [11, 12, 23, 24, 25, 26]; // shoulders, hips, knees
+    const avgPositions = keyIndices.map(idx => {
+      const xs = results.map(r => r.landmarks[idx]?.x ?? 0);
+      const ys = results.map(r => r.landmarks[idx]?.y ?? 0);
+      return { x: xs.reduce((a, b) => a + b) / xs.length, y: ys.reduce((a, b) => a + b) / ys.length };
+    });
+
+    // Score each frame by deviation from average
+    const deviations = results.map(r => {
+      let totalDev = 0;
+      keyIndices.forEach((idx, i) => {
+        const dx = (r.landmarks[idx]?.x ?? 0) - avgPositions[i].x;
+        const dy = (r.landmarks[idx]?.y ?? 0) - avgPositions[i].y;
+        totalDev += Math.sqrt(dx * dx + dy * dy);
+      });
+      return totalDev;
+    });
+
+    // Remove the worst frame if its deviation is > 2× the median
+    const sorted = [...deviations].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const threshold = median * 2.5;
+
+    return results.filter((_, i) => deviations[i] <= threshold);
+  }
+
+  private averageLandmarks(results: PoseProcessingResult[]): Landmark[] {
+    const n = results.length;
+    const numLandmarks = results[0].landmarks.length;
+    const averaged: Landmark[] = [];
+
+    for (let i = 0; i < numLandmarks; i++) {
+      let sumX = 0, sumY = 0, sumZ = 0, sumVis = 0;
+      let weightSum = 0;
+
+      for (const r of results) {
+        const lm = r.landmarks[i];
+        if (!lm) continue;
+        // Weight by visibility — higher visibility = more reliable
+        const w = Math.max(lm.visibility, 0.1);
+        sumX += lm.x * w;
+        sumY += lm.y * w;
+        sumZ += lm.z * w;
+        sumVis += lm.visibility;
+        weightSum += w;
+      }
+
+      averaged.push({
+        x: weightSum > 0 ? sumX / weightSum : 0,
+        y: weightSum > 0 ? sumY / weightSum : 0,
+        z: weightSum > 0 ? sumZ / weightSum : 0,
+        visibility: sumVis / n,
+        name: results[0].landmarks[i]?.name ?? `landmark_${i}`,
+      });
+    }
+
+    return averaged;
+  }
+
+  /**
    * Convert processing result to CaptureAngle for measurement engine
    */
   toCaptureAngle(
@@ -244,11 +366,50 @@ class PoseProcessor {
   // ============================================================
 
   private async processOnDevice(
-    _imageUri: string,
-    _captureType: string
+    imageUri: string,
+    captureType: string
   ): Promise<Omit<PoseProcessingResult, 'processingTimeMs'>> {
-    // On-device processing not available — use cloud server instead
-    throw new Error('On-device processing not available. Use cloud server.');
+    // Attempt to use react-native-mediapipe-pose for on-device inference.
+    // The package must be installed and linked; if not available we throw
+    // so the caller falls through to the estimation fallback.
+    try {
+      // Dynamic import so the app still builds even when the native module
+      // is not installed (e.g., Expo Go without dev-client).
+      const mediapipe = require('@gymbrosinc/react-native-mediapipe-pose');
+
+      const result = await mediapipe.detectPose(imageUri, {
+        model: 'full', // blazepose_full for 33 landmarks
+        delegate: 'gpu', // Use GPU acceleration when available
+      });
+
+      if (!result || !result.landmarks || result.landmarks.length === 0) {
+        throw new Error('On-device MediaPipe returned no landmarks');
+      }
+
+      const landmarks: Landmark[] = result.landmarks.map((lm: any, index: number) => ({
+        x: lm.x ?? 0,
+        y: lm.y ?? 0,
+        z: lm.z ?? 0,
+        visibility: lm.visibility ?? lm.score ?? 0,
+        name: BLAZEPOSE_LANDMARK_NAMES[index] ?? `landmark_${index}`,
+      }));
+
+      return {
+        landmarks,
+        imageWidth: result.imageWidth || 720,
+        imageHeight: result.imageHeight || 1280,
+        confidence: this.calcAvgConfidence(landmarks),
+        processingMode: 'on_device',
+        modelUsed: 'blazepose_full_ondevice',
+      };
+    } catch (error: any) {
+      // If the native module is not installed, the require() will throw.
+      // Log once and let caller fall through to estimation.
+      if (error?.code === 'MODULE_NOT_FOUND' || error?.message?.includes('Cannot find module')) {
+        console.info('[PoseProcessor] On-device MediaPipe not installed. Install @gymbrosinc/react-native-mediapipe-pose for offline ±2cm accuracy.');
+      }
+      throw new Error(`On-device processing not available: ${error?.message || error}`);
+    }
   }
 
   // ============================================================

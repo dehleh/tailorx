@@ -329,6 +329,52 @@ class AccuracyEngine {
       overallRating: rating,
     };
   }
+
+  // ============================================================
+  // TEMPORAL SMOOTHING
+  // ============================================================
+
+  /**
+   * Apply exponential temporal smoothing to reduce scan-to-scan variance.
+   * Blends new measurements with previous history using a configurable alpha.
+   * 
+   * smoothed = alpha × new + (1 - alpha) × previous_average
+   * 
+   * @param alpha - Weight for new measurement (0-1). Lower = more smoothing. Default 0.3.
+   */
+  applyTemporalSmoothing(
+    newMeasurements: Record<string, number>,
+    history: BodyMeasurement[],
+    alpha: number = 0.3
+  ): { smoothed: Record<string, number>; adjustments: Record<string, number> } {
+    if (history.length === 0) {
+      return { smoothed: { ...newMeasurements }, adjustments: {} };
+    }
+
+    const smoothed: Record<string, number> = {};
+    const adjustments: Record<string, number> = {};
+
+    for (const [key, newValue] of Object.entries(newMeasurements)) {
+      const historicalValues = history
+        .slice(-5) // Use last 5 scans max for smoothing
+        .map(m => m.measurements[key as keyof typeof m.measurements])
+        .filter((v): v is number => typeof v === 'number' && v > 0);
+
+      if (historicalValues.length === 0) {
+        smoothed[key] = newValue;
+        continue;
+      }
+
+      const prevAvg = historicalValues.reduce((a, b) => a + b, 0) / historicalValues.length;
+      const smoothedValue = alpha * newValue + (1 - alpha) * prevAvg;
+      const rounded = Math.round(smoothedValue * 10) / 10;
+
+      adjustments[key] = Math.round((rounded - newValue) * 10) / 10;
+      smoothed[key] = rounded;
+    }
+
+    return { smoothed, adjustments };
+  }
 }
 
 export const accuracyEngine = new AccuracyEngine();

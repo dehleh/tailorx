@@ -21,9 +21,11 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Theme } from '../constants/theme';
 import { CaptureGuide } from '../components/CaptureGuide';
+import { LivePoseFeedback, analyzePose } from '../components/LivePoseFeedback';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { poseProcessor, PoseProcessingResult } from '../services/poseProcessor';
-import { measurementEngine, CaptureAngle } from '../services/measurementEngine';
+import { measurementEngine, CaptureAngle, ContourData } from '../services/measurementEngine';
+import { contourService } from '../services/contourService';
 import { productionImageValidation } from '../services/productionImageValidation';
 import { accuracyEngine } from '../services/accuracyEngine';
 import { useMeasurementStore } from '../stores/measurementStore';
@@ -56,6 +58,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [liveLandmarks, setLiveLandmarks] = useState<import('../services/measurementEngine').Landmark[] | null>(null);
   const cameraRef = useRef<any>(null);
 
   const addMeasurement = useMeasurementStore((state) => state.addMeasurement);
@@ -64,6 +67,8 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   // Calibration passed from CalibrationScreen or route params
   const calibration = route?.params?.calibration || null;
   const knownHeight = route?.params?.knownHeight || user?.heightCm || null;
+  const anchorMeasurement: { key: string; valueCm: number } | null =
+    route?.params?.anchorMeasurement || null;
 
   const CAPTURE_STEPS: Array<'front' | 'side' | 'back'> = ['front', 'side', 'back'];
   const currentStepIndex = CAPTURE_STEPS.indexOf(currentStep as any);
@@ -119,15 +124,33 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         }
       }
 
-      // 3. Process with pose detection
+      // 3. Process with pose detection (multi-frame burst averaging)
       setProcessingMessage(`Analyzing ${currentStep} view...`);
-      const poseResult = await poseProcessor.processImage(
-        photo.uri,
-        currentStep as 'front' | 'side' | 'back'
-      );
+
+      // Capture 2 additional rapid frames for burst averaging (#1)
+      const burstUris: string[] = [photo.uri];
+      for (let i = 0; i < 2; i++) {
+        try {
+          const burstPhoto = await cameraRef.current.takePictureAsync({
+            quality: 0.9,
+            base64: false,
+            skipProcessing: true, // faster for burst frames
+          });
+          burstUris.push(burstPhoto.uri);
+        } catch {
+          // If burst capture fails, continue with what we have
+          break;
+        }
+      }
+
+      // Use burst processing if multiple frames, else single
+      const poseResult = burstUris.length > 1
+        ? await poseProcessor.processBurst(burstUris, currentStep as 'front' | 'side' | 'back')
+        : await poseProcessor.processImage(photo.uri, currentStep as 'front' | 'side' | 'back');
 
       if (poseResult.confidence < 0.3) {
         setIsCapturing(false);
+        setLiveLandmarks(null);
         Alert.alert(
           'Pose Detection Failed',
           'Could not detect body landmarks. Please ensure:\n\n' +
@@ -141,6 +164,33 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       }
 
       // 4. Store capture
+      // Also analyse pose quality and set live landmarks for feedback
+      setLiveLandmarks(poseResult.landmarks);
+      const poseFeedback = analyzePose(
+        poseResult.landmarks,
+        poseResult.imageWidth,
+        poseResult.imageHeight,
+        currentStep as 'front' | 'side' | 'back'
+      );
+
+      // Warn user if pose quality is suboptimal (but still usable)
+      if (!poseFeedback.overallReady && poseResult.confidence >= 0.3) {
+        const proceed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Pose Issue Detected',
+            poseFeedback.issues.join('\n') + '\n\nProceed with this capture anyway?',
+            [
+              { text: 'Retake', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Use Anyway', onPress: () => resolve(true) },
+            ]
+          );
+        });
+        if (!proceed) {
+          setIsCapturing(false);
+          return;
+        }
+      }
+
       const newCapture: CapturedAngle = {
         type: currentStep as 'front' | 'side' | 'back',
         imageUri: photo.uri,
@@ -156,20 +206,29 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         setCurrentStep(CAPTURE_STEPS[nextStepIndex]);
         setIsCapturing(false);
 
-        // Show intermediate result
+        const nextStep = CAPTURE_STEPS[nextStepIndex];
+        const isSideNext = nextStep === 'side';
+
+        // Encourage side-view capture with accuracy gain info
         Alert.alert(
           `${capitalize(currentStep)} View Captured! ✅`,
           `Confidence: ${Math.round(poseResult.confidence * 100)}%\n` +
           `${poseResult.landmarks.length} landmarks detected\n\n` +
-          `Next: ${capitalize(CAPTURE_STEPS[nextStepIndex])} view`,
+          `Next: ${capitalize(nextStep)} view` +
+          (isSideNext
+            ? '\n\n⚡ Adding a side view improves circumference accuracy by 40-60% (chest, waist, hips).'
+            : ''),
           [
             {
-              text: `Capture ${capitalize(CAPTURE_STEPS[nextStepIndex])}`,
+              text: `Capture ${capitalize(nextStep)}`,
             },
-            {
-              text: 'Finish Now',
-              onPress: () => processMeasurements(updatedCaptures),
-            },
+            ...(isSideNext
+              ? [] // Don't offer "Finish Now" before side view — strongly encourage it
+              : [{
+                  text: 'Finish Now',
+                  onPress: () => processMeasurements(updatedCaptures),
+                }]
+            ),
           ]
         );
       } else {
@@ -200,14 +259,85 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       );
 
       // Run measurement engine
-      setProcessingProgress(50);
+      setProcessingProgress(40);
+      setProcessingMessage('Analyzing body contour...');
+
+      // Extract silhouette contour widths from captured images (if server is available)
+      // This provides real body-edge widths instead of skeleton-joint approximations
+      const contourData: ContourData = {};
+      const frontCapture = allCaptures.find(c => c.type === 'front');
+      const sideCapture = allCaptures.find(c => c.type === 'side');
+
+      // Compute a preliminary scale factor for the contour service
+      const prelimScaleFactor = knownHeight
+        ? knownHeight / (frontCapture?.poseResult?.imageHeight || 1280)
+        : null;
+
+      // Extract front and side contours in parallel where possible
+      const contourPromises: Promise<void>[] = [];
+
+      if (frontCapture) {
+        contourPromises.push(
+          contourService
+            .extractContour(
+              frontCapture.imageUri,
+              'front',
+              frontCapture.poseResult.landmarks,
+              prelimScaleFactor
+            )
+            .then(result => {
+              if (result?.success) {
+                contourData.front = {
+                  widths: result.widths,
+                  silhouetteHeightPx: result.silhouetteHeightPx,
+                  segmentationConfidence: result.segmentationConfidence,
+                };
+              }
+            })
+        );
+      }
+
+      if (sideCapture) {
+        contourPromises.push(
+          contourService
+            .extractContour(
+              sideCapture.imageUri,
+              'side',
+              sideCapture.poseResult.landmarks,
+              prelimScaleFactor
+            )
+            .then(result => {
+              if (result?.success) {
+                contourData.side = {
+                  widths: result.widths,
+                  silhouetteHeightPx: result.silhouetteHeightPx,
+                  segmentationConfidence: result.segmentationConfidence,
+                };
+              }
+            })
+        );
+      }
+
+      await Promise.all(contourPromises);
+
+      setProcessingProgress(55);
       setProcessingMessage('Calculating measurements...');
+
+      // Set personalized ratios from user's scan history (if enough data exists)
+      const allMeasurements = useMeasurementStore.getState().measurements;
+      const userGender = (user?.gender as 'male' | 'female' | 'other') || 'other';
+      measurementEngine.setPersonalizedRatios(
+        allMeasurements.map(m => ({ measurements: m.measurements as Record<string, number> })),
+        userGender
+      );
       
       const result = measurementEngine.calculateFromMultiAngle(
         captureAngles,
         calibration,
         knownHeight,
-        (user?.gender as 'male' | 'female' | 'other') || 'other'
+        (user?.gender as 'male' | 'female' | 'other') || 'other',
+        contourData,
+        anchorMeasurement
       );
 
       // Analyze accuracy
@@ -216,6 +346,13 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
       const measurements = useMeasurementStore.getState().measurements;
       const accuracyReport = accuracyEngine.analyzeAccuracy(result, measurements);
+
+      // Apply temporal smoothing against scan history
+      const { smoothed } = accuracyEngine.applyTemporalSmoothing(
+        result.measurements,
+        measurements
+      );
+      result.measurements = smoothed;
 
       // Save measurement
       setProcessingProgress(90);
@@ -283,6 +420,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
     setIsProcessing(false);
     setIsCapturing(false);
     setProcessingProgress(0);
+    setLiveLandmarks(null);
   };
 
   const skipStep = () => {
@@ -290,6 +428,26 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       Alert.alert('Front View Required', 'At least the front view is needed for measurements.');
       return;
     }
+
+    // If side view hasn't been captured yet, strongly encourage it
+    const hasSideCapture = captures.some(c => c.type === 'side');
+    if (!hasSideCapture) {
+      Alert.alert(
+        'Side View Recommended',
+        'Without a side view, circumference measurements (chest, waist, hips) will be estimated from averages, reducing accuracy by 40-60%.\n\n' +
+        'Are you sure you want to skip?',
+        [
+          { text: 'Capture Side View', style: 'cancel' },
+          {
+            text: 'Skip Anyway',
+            style: 'destructive',
+            onPress: () => processMeasurements(captures),
+          },
+        ]
+      );
+      return;
+    }
+
     processMeasurements(captures);
   };
 
@@ -330,10 +488,18 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       <CameraView style={styles.camera} facing="back" ref={cameraRef}>
         {/* Capture guide overlay */}
         {currentStep !== 'processing' && currentStep !== 'complete' && (
-          <CaptureGuide
-            captureType={currentStep as 'front' | 'side' | 'back'}
-            isReady={!isCapturing}
-          />
+          <>
+            <CaptureGuide
+              captureType={currentStep as 'front' | 'side' | 'back'}
+              isReady={!isCapturing}
+            />
+            <LivePoseFeedback
+              landmarks={liveLandmarks}
+              imageWidth={720}
+              imageHeight={1280}
+              captureType={currentStep as 'front' | 'side' | 'back'}
+            />
+          </>
         )}
 
         {/* Top bar */}

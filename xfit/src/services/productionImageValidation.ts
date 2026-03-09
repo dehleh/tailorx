@@ -3,6 +3,7 @@
  * 
  * Performs real image quality analysis for body measurement accuracy.
  * Replaces the mock Math.random() validation with actual checks.
+ * Includes blur detection and brightness/contrast analysis.
  */
 
 import * as FileSystem from 'expo-file-system';
@@ -91,6 +92,12 @@ class ProductionImageValidationService {
     // which is done server-side or via native module
     const qualityCheck = this.checkImageQuality(metadata);
     checks.push(qualityCheck);
+
+    // 6. Server-side blur & brightness analysis (if cloud available)
+    const serverQuality = await this.checkServerImageQuality(imageUri);
+    if (serverQuality) {
+      checks.push(...serverQuality);
+    }
 
     // Generate recommendations
     for (const check of checks) {
@@ -181,8 +188,95 @@ class ProductionImageValidationService {
         'Full body from head to feet visible',
         'Camera at waist/chest height',
         'No mirror shots (causes reversal)',
+        'Hold camera steady to avoid blur',
       ],
     };
+  }
+
+  // ============================================================
+  // PRIVATE: Server-Side Quality Analysis
+  // ============================================================
+
+  /**
+   * Call the cloud server for pixel-level blur, brightness, and contrast analysis.
+   * Returns null if the server is unavailable (graceful degradation).
+   */
+  private async checkServerImageQuality(imageUri: string): Promise<ValidationCheck[] | null> {
+    const apiUrl = process.env.EXPO_PUBLIC_POSE_API_URL || 'http://localhost:8000/v1/pose';
+    const apiKey = process.env.EXPO_PUBLIC_POSE_API_KEY || '';
+    const baseUrl = apiUrl.replace(/\/pose\/?.*$/, '');
+    const qualityUrl = `${baseUrl}/image/quality`;
+
+    try {
+      const base64 = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(qualityUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ image: base64 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      const checks: ValidationCheck[] = [];
+
+      // Blur check
+      checks.push({
+        name: 'Sharpness',
+        type: 'blur',
+        passed: data.blur_score >= 20,
+        score: Math.min(100, Math.round(data.blur_score)),
+        severity: data.blur_score < 20 ? 'warning' : 'info',
+        message: data.blur_score < 20
+          ? `Image is blurry (score: ${data.blur_score.toFixed(0)}/100). Hold camera steady.`
+          : `Good sharpness (score: ${data.blur_score.toFixed(0)}/100)`,
+      });
+
+      // Brightness check
+      const brightOk = data.brightness >= 50 && data.brightness <= 220;
+      checks.push({
+        name: 'Lighting',
+        type: 'lighting',
+        passed: brightOk,
+        score: brightOk ? 90 : 40,
+        severity: brightOk ? 'info' : 'warning',
+        message: data.brightness < 50
+          ? 'Image is too dark. Move to a well-lit area.'
+          : data.brightness > 220
+          ? 'Image is overexposed. Reduce lighting or avoid direct flash.'
+          : `Good lighting (brightness: ${data.brightness.toFixed(0)})`,
+      });
+
+      // Contrast check
+      checks.push({
+        name: 'Contrast',
+        type: 'background',
+        passed: data.contrast >= 25,
+        score: data.contrast >= 25 ? 85 : 35,
+        severity: data.contrast < 25 ? 'warning' : 'info',
+        message: data.contrast < 25
+          ? 'Low contrast. Stand against a plain, contrasting background.'
+          : `Good contrast (${data.contrast.toFixed(0)})`,
+      });
+
+      return checks;
+    } catch {
+      // Server unavailable — graceful degradation, skip server checks
+      return null;
+    }
   }
 
   // ============================================================
