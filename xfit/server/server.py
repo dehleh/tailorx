@@ -29,20 +29,18 @@ from __future__ import annotations
 
 import base64
 import io
-import json as json_stdlib
 import time
 import os
 import logging
 import random
 import smtplib
-import urllib.request
-import urllib.error
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional, Any
 from datetime import datetime, timedelta
 
 import numpy as np
+import requests as http_requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -1315,33 +1313,24 @@ def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
         logger.warning("RESEND_API_KEY not set, skipping Resend")
         return False
 
-    payload = json_stdlib.dumps({
-        "from": RESEND_FROM,
-        "to": [to_email],
-        "subject": subject,
-        "html": html_body,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://api.resend.com/emails",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            if resp.status in (200, 201):
-                logger.info(f"OTP email sent via Resend to {to_email}")
-                return True
-            body = resp.read().decode()
-            logger.error(f"Resend returned {resp.status}: {body}")
-            return False
-    except urllib.error.HTTPError as e:
-        body = e.read().decode() if e.fp else ""
-        logger.error(f"Resend HTTP error {e.code}: {body}")
+        resp = http_requests.post(
+            "https://api.resend.com/emails",
+            json={
+                "from": RESEND_FROM,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_body,
+            },
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+            },
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            logger.info(f"OTP email sent via Resend to {to_email}")
+            return True
+        logger.error(f"Resend returned {resp.status_code}: {resp.text}")
         return False
     except Exception as e:
         logger.error(f"Resend failed for {to_email}: {e}")
