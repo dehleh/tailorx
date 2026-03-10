@@ -29,11 +29,14 @@ from __future__ import annotations
 
 import base64
 import io
+import json as json_stdlib
 import time
 import os
 import logging
 import random
 import smtplib
+import urllib.request
+import urllib.error
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional, Any
@@ -60,7 +63,12 @@ PORT = int(os.environ.get("PORT", 8000))
 MODEL_PATH = os.environ.get("MODEL_PATH", "pose_landmarker_full.task")
 SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "selfie_segmenter.tflite")
 
-# SMTP config for email OTP
+# Email config for OTP
+# Primary: Resend HTTP API (works on Railway, which blocks SMTP ports)
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = os.environ.get("RESEND_FROM", "Tailor-XFit <onboarding@resend.dev>")  # Verify domain on Resend for custom sender
+
+# Fallback: SMTP (works on servers that allow outbound SMTP)
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 SMTP_USER = os.environ.get("SMTP_USER", "")       # e.g. your-email@gmail.com
@@ -1293,8 +1301,47 @@ async def detect_pose_refined(
 # EMAIL OTP ENDPOINTS
 # ============================================================
 
-def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    """Send an email via SMTP."""
+def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
+    """Send an email via Resend HTTP API (works on Railway/cloud platforms)."""
+    if not RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY not set, skipping Resend")
+        return False
+
+    payload = json_stdlib.dumps({
+        "from": RESEND_FROM,
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status == 200:
+                logger.info(f"OTP email sent via Resend to {to_email}")
+                return True
+            body = resp.read().decode()
+            logger.error(f"Resend returned {resp.status}: {body}")
+            return False
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        logger.error(f"Resend HTTP error {e.code}: {body}")
+        return False
+    except Exception as e:
+        logger.error(f"Resend failed for {to_email}: {e}")
+        return False
+
+
+def _send_email_smtp(to_email: str, subject: str, html_body: str) -> bool:
+    """Send an email via SMTP (fallback for non-Railway environments)."""
     if not SMTP_USER or not SMTP_PASS:
         logger.error("SMTP_USER and SMTP_PASS must be set to send emails")
         return False
@@ -1315,11 +1362,18 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
                 server.starttls()
                 server.login(SMTP_USER, SMTP_PASS)
                 server.sendmail(SMTP_USER, to_email, msg.as_string())
-        logger.info(f"OTP email sent to {to_email}")
+        logger.info(f"OTP email sent via SMTP to {to_email}")
         return True
     except Exception as e:
-        logger.error(f"Failed to send email to {to_email}: {e}")
+        logger.error(f"SMTP failed for {to_email}: {e}")
         return False
+
+
+def _send_email(to_email: str, subject: str, html_body: str) -> bool:
+    """Send email via Resend (primary) or SMTP (fallback)."""
+    if RESEND_API_KEY:
+        return _send_email_resend(to_email, subject, html_body)
+    return _send_email_smtp(to_email, subject, html_body)
 
 
 @app.post("/v1/auth/send-otp")
