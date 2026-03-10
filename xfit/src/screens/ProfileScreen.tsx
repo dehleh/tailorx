@@ -130,7 +130,7 @@ export default function ProfileScreen() {
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
         <Text style={styles.userName}>{displayName}</Text>
-        {authUser?.phoneNumber ? <Text style={styles.userEmail}>{authUser.phoneNumber}</Text> : null}
+        {authUser?.email ? <Text style={styles.userEmail}>{authUser.email}</Text> : null}
         {user?.email ? <Text style={styles.userEmail}>{user.email}</Text> : null}
 
         <View style={styles.statsRow}>

@@ -5,8 +5,8 @@
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
-  PhoneAuth: undefined;
-  OTPVerification: { phoneNumber: string; countryCode: string };
+  EmailAuth: undefined;
+  OTPVerification: { email: string };
   GettingStarted: undefined;
   PrivacyConsent: undefined;
   MainTabs: undefined;

@@ -1,22 +1,24 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  SafeAreaView, KeyboardAvoidingView, Platform,
+  SafeAreaView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { Colors } from '../constants/colors';
 import { useAuthStore } from '../stores/authStore';
 import { generateId } from '../utils/helpers';
 
 const CODE_LENGTH = 6;
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tailorx-pose-api-production.up.railway.app';
 
 export default function OTPVerificationScreen({ route, navigation }: any) {
-  const { phoneNumber, countryCode } = route.params;
+  const { email } = route.params;
   const [code, setCode] = useState<string[]>(new Array(CODE_LENGTH).fill(''));
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const setUser = useAuthStore((s) => s.setUser);
 
-  const maskedPhone = `${countryCode} ${phoneNumber.slice(0, 3)}****${phoneNumber.slice(-2)}`;
+  const maskedEmail = email.replace(/(.{2})(.*)(@.*)/, '$1***$3');
 
   const handleChange = (text: string, index: number) => {
     const newCode = [...code];
@@ -39,11 +41,25 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
     if (fullCode.length !== CODE_LENGTH) return;
 
     setIsLoading(true);
-    // Simulate verification — replace with real API
-    setTimeout(async () => {
+    setError('');
+
+    try {
+      const res = await fetch(`${API_URL}/v1/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: fullCode }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.detail || 'Verification failed');
+        setIsLoading(false);
+        return;
+      }
+
       await setUser({
         id: generateId(),
-        phoneNumber: `${countryCode}${phoneNumber}`,
+        email,
         displayName: '',
         isOnboarded: false,
         isPrivacyAccepted: false,
@@ -51,7 +67,23 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
       });
       setIsLoading(false);
       navigation.navigate('GettingStarted');
-    }, 1200);
+    } catch (e: any) {
+      setIsLoading(false);
+      setError('Network error — is the server running?');
+    }
+  };
+
+  const handleResend = async () => {
+    try {
+      await fetch(`${API_URL}/v1/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      Alert.alert('Code Resent', 'A new verification code has been sent to your email.');
+    } catch {
+      Alert.alert('Error', 'Failed to resend code.');
+    }
   };
 
   const isComplete = code.every((c) => c.length > 0);
@@ -70,12 +102,12 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
 
         <View style={styles.content}>
           <View style={styles.iconCircle}>
-            <Text style={styles.icon}>📞</Text>
+            <Text style={styles.icon}>✉️</Text>
           </View>
 
           <Text style={styles.title}>Enter verification code</Text>
           <Text style={styles.subtitle}>
-            We sent a 6-digit code to {maskedPhone}
+            We sent a 6-digit code to {maskedEmail}
           </Text>
 
           <View style={styles.codeRow}>
@@ -93,6 +125,7 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
               />
             ))}
           </View>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
         <View style={styles.footer}>
@@ -106,7 +139,7 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
               {isLoading ? 'Verifying...' : 'Verify & Continue'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={handleResend}>
             <Text style={styles.resendText}>
               Did not receive code? <Text style={styles.resendLink}>Resend code</Text>
             </Text>
@@ -187,6 +220,12 @@ const styles = StyleSheet.create({
   codeInputFilled: {
     borderColor: Colors.primary,
     backgroundColor: '#E0F7F5',
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: 13,
+    marginTop: 12,
+    textAlign: 'center',
   },
   footer: {
     paddingHorizontal: 24,

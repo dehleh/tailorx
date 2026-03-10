@@ -1,23 +1,44 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  SafeAreaView, KeyboardAvoidingView, Platform,
+  SafeAreaView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { Colors } from '../constants/colors';
 
-export default function PhoneAuthScreen({ navigation }: any) {
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [countryCode] = useState('+234');
-  const [isLoading, setIsLoading] = useState(false);
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tailorx-pose-api-production.up.railway.app';
 
-  const handleSendCode = () => {
-    if (phoneNumber.length < 7) return;
+export default function EmailAuthScreen({ navigation }: any) {
+  const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  const handleSendCode = async () => {
+    if (!isValidEmail) return;
     setIsLoading(true);
-    // Simulate OTP send — replace with real API
-    setTimeout(() => {
+    setError('');
+
+    try {
+      const res = await fetch(`${API_URL}/v1/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.detail || 'Failed to send code');
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(false);
-      navigation.navigate('OTPVerification', { phoneNumber, countryCode });
-    }, 1000);
+      navigation.navigate('OTPVerification', { email: email.trim().toLowerCase() });
+    } catch (e: any) {
+      setIsLoading(false);
+      setError('Network error — is the server running?');
+    }
   };
 
   return (
@@ -34,48 +55,42 @@ export default function PhoneAuthScreen({ navigation }: any) {
 
         <View style={styles.content}>
           <View style={styles.iconCircle}>
-            <Text style={styles.icon}>📞</Text>
+            <Text style={styles.icon}>✉️</Text>
           </View>
 
-          <Text style={styles.title}>Enter your phone number</Text>
+          <Text style={styles.title}>Enter your email address</Text>
           <Text style={styles.subtitle}>
-            We'll send you a verification code to confirm your number
+            We'll send you a verification code to confirm your email
           </Text>
 
-          <Text style={styles.label}>Phone Number</Text>
-          <View style={styles.inputRow}>
-            <View style={styles.countryCodeBox}>
-              <Text style={styles.flag}>🇳🇬</Text>
-              <Text style={styles.countryCodeText}>{countryCode}</Text>
-            </View>
-            <TextInput
-              style={styles.phoneInput}
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              placeholder="Phone number"
-              placeholderTextColor={Colors.text.light}
-              keyboardType="phone-pad"
-              maxLength={15}
-            />
-          </View>
+          <Text style={styles.label}>Email Address</Text>
+          <TextInput
+            style={styles.emailInput}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@example.com"
+            placeholderTextColor={Colors.text.light}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
         <View style={styles.footer}>
           <TouchableOpacity
-            style={[styles.sendButton, phoneNumber.length < 7 && styles.sendButtonDisabled]}
+            style={[styles.sendButton, !isValidEmail && styles.sendButtonDisabled]}
             onPress={handleSendCode}
             activeOpacity={0.8}
-            disabled={phoneNumber.length < 7 || isLoading}
+            disabled={!isValidEmail || isLoading}
           >
             <Text style={styles.sendButtonText}>
-              {isLoading ? 'Sending...' : 'Send Code'}
+              {isLoading ? 'Sending...' : 'Send Verification Code'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity>
-            <Text style={styles.resendText}>
-              Did not receive code? <Text style={styles.resendLink}>Resend code</Text>
-            </Text>
-          </TouchableOpacity>
+          <Text style={styles.hintText}>
+            A 6-digit code will be sent to your email
+          </Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -138,31 +153,7 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     marginBottom: 10,
   },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  countryCodeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    gap: 6,
-  },
-  flag: {
-    fontSize: 18,
-  },
-  countryCodeText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: Colors.text.primary,
-  },
-  phoneInput: {
-    flex: 1,
+  emailInput: {
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.inputBorder,
@@ -171,6 +162,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     color: Colors.text.primary,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: 13,
+    marginTop: 8,
   },
   footer: {
     paddingHorizontal: 24,
@@ -193,12 +189,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  resendText: {
+  hintText: {
     fontSize: 13,
     color: Colors.text.secondary,
-  },
-  resendLink: {
-    color: Colors.primary,
-    fontWeight: '600',
   },
 });

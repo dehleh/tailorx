@@ -11,7 +11,7 @@ import { useAuthStore } from '../stores/authStore';
 // Auth screens
 import SplashScreen from '../screens/SplashScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
-import PhoneAuthScreen from '../screens/PhoneAuthScreen';
+import EmailAuthScreen from '../screens/PhoneAuthScreen';
 import OTPVerificationScreen from '../screens/OTPVerificationScreen';
 import GettingStartedScreen from '../screens/GettingStartedScreen';
 import PrivacyConsentScreen from '../screens/PrivacyConsentScreen';
@@ -113,7 +113,7 @@ export default function AppNavigator() {
             <>
               <RootStack.Screen name="Splash" component={SplashScreen} />
               <RootStack.Screen name="Onboarding" component={OnboardingScreen} />
-              <RootStack.Screen name="PhoneAuth" component={PhoneAuthScreen} />
+              <RootStack.Screen name="EmailAuth" component={EmailAuthScreen} />
               <RootStack.Screen name="OTPVerification" component={OTPVerificationScreen} />
               <RootStack.Screen name="GettingStarted" component={GettingStartedScreen} />
               <RootStack.Screen name="PrivacyConsent" component={PrivacyConsentScreen} />

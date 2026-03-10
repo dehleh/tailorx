@@ -57,7 +57,7 @@ export default function OnboardingScreen({ navigation }: any) {
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => navigation.navigate('PhoneAuth')}
+          onPress={() => navigation.navigate('EmailAuth')}
           activeOpacity={0.8}
         >
           <Text style={styles.primaryButtonText}>Get Started  →</Text>

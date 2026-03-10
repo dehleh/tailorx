@@ -1,6 +1,6 @@
 export interface AuthUser {
   id: string;
-  phoneNumber: string;
+  email: string;
   displayName: string;
   avatarUrl?: string;
   isOnboarded: boolean;
@@ -9,12 +9,11 @@ export interface AuthUser {
 }
 
 export interface OTPRequest {
-  phoneNumber: string;
-  countryCode: string;
+  email: string;
 }
 
 export interface OTPVerification {
-  phoneNumber: string;
+  email: string;
   code: string;
 }
 
@@ -26,13 +25,13 @@ export interface ShareLink {
   createdAt: string;
 }
 
-export type OnboardingStep = 'splash' | 'welcome' | 'phone' | 'otp' | 'getting-started' | 'privacy';
+export type OnboardingStep = 'splash' | 'welcome' | 'email' | 'otp' | 'getting-started' | 'privacy';
 
 export type AuthStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
-  PhoneAuth: undefined;
-  OTPVerification: { phoneNumber: string; countryCode: string };
+  EmailAuth: undefined;
+  OTPVerification: { email: string };
   GettingStarted: undefined;
   PrivacyConsent: undefined;
 };
