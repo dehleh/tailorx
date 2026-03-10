@@ -1,19 +1,24 @@
 import { useEffect } from 'react';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useUserStore } from '../stores/userStore';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * Custom hook to initialize app data on startup.
- * Loads persisted user profile and measurements from AsyncStorage.
+ * Loads persisted auth, user profile and measurements from AsyncStorage.
  */
 export const useAppInitialization = () => {
   const loadMeasurements = useMeasurementStore((state) => state.loadMeasurements);
   const loadUser = useUserStore((state) => state.loadUser);
+  const loadAuth = useAuthStore((state) => state.loadAuth);
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
         console.log('Initializing Tailor-X app...');
+        
+        // Load auth state first
+        await loadAuth();
         
         // Load user data from storage
         await loadUser();

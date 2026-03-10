@@ -11,10 +11,10 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Theme } from '../constants/theme';
+import { Colors } from '../constants/colors';
 import { useUserStore } from '../stores/userStore';
 import { useMeasurementStore } from '../stores/measurementStore';
-import { UserProfile } from '../types/user';
+import { useAuthStore } from '../stores/authStore';
 
 export default function ProfileScreen() {
   const user = useUserStore((state) => state.user);
@@ -23,6 +23,8 @@ export default function ProfileScreen() {
   const updateUser = useUserStore((state) => state.updateUser);
   const clearUser = useUserStore((state) => state.clearUser);
   const measurements = useMeasurementStore((state) => state.measurements);
+  const authUser = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editName, setEditName] = useState('');
@@ -105,8 +107,8 @@ export default function ProfileScreen() {
     );
   };
 
-  const displayName = user?.name || 'Set Up Profile';
-  const initials = (user?.name || 'U')
+  const displayName = authUser?.displayName || user?.name || 'Set Up Profile';
+  const initials = (authUser?.displayName || user?.name || 'U')
     .split(' ')
     .map((n) => n[0])
     .join('')
@@ -128,6 +130,7 @@ export default function ProfileScreen() {
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
         <Text style={styles.userName}>{displayName}</Text>
+        {authUser?.phoneNumber ? <Text style={styles.userEmail}>{authUser.phoneNumber}</Text> : null}
         {user?.email ? <Text style={styles.userEmail}>{user.email}</Text> : null}
 
         <View style={styles.statsRow}>
@@ -194,6 +197,15 @@ export default function ProfileScreen() {
       {/* Danger zone */}
       <TouchableOpacity style={styles.resetButton} onPress={handleResetData}>
         <Text style={styles.resetText}>🗑️ Reset All Data</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={() => {
+        Alert.alert('Log Out', 'Are you sure you want to log out?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Log Out', style: 'destructive', onPress: () => logout() },
+        ]);
+      }}>
+        <Text style={styles.logoutText}>🚪 Log Out</Text>
       </TouchableOpacity>
 
       <Text style={styles.versionText}>Tailor-X v1.0.0</Text>
@@ -323,236 +335,250 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
+    backgroundColor: Colors.background,
   },
   profileHeader: {
-    backgroundColor: Theme.colors.white,
-    paddingTop: Theme.spacing.xxl,
-    paddingBottom: Theme.spacing.lg,
+    backgroundColor: Colors.white,
+    paddingTop: 48,
+    paddingBottom: 20,
     alignItems: 'center',
-    marginBottom: Theme.spacing.md,
+    marginBottom: 12,
   },
   avatar: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Theme.colors.primary,
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-    ...Theme.shadows.medium,
+    marginBottom: 12,
   },
   avatarText: {
     fontSize: 36,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.white,
+    fontWeight: '700',
+    color: Colors.white,
   },
   userName: {
-    fontSize: Theme.fontSize.xxl,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
   userEmail: {
-    fontSize: Theme.fontSize.md,
-    color: Theme.colors.text.secondary,
-    marginBottom: Theme.spacing.lg,
+    fontSize: 15,
+    color: Colors.text.secondary,
+    marginBottom: 4,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    paddingHorizontal: Theme.spacing.md,
+    paddingHorizontal: 12,
+    marginTop: 16,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
     marginBottom: 2,
   },
   statLabel: {
-    fontSize: Theme.fontSize.xs,
-    color: Theme.colors.text.secondary,
+    fontSize: 12,
+    color: Colors.text.secondary,
   },
   statDivider: {
     width: 1,
     height: 36,
-    backgroundColor: Theme.colors.border,
-    marginHorizontal: Theme.spacing.sm,
+    backgroundColor: Colors.border,
+    marginHorizontal: 8,
   },
   completeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF8E1',
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#FFE082',
   },
   completeBannerIcon: {
     fontSize: 24,
-    marginRight: Theme.spacing.sm,
+    marginRight: 8,
   },
   completeBannerTitle: {
-    fontSize: Theme.fontSize.sm,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   completeBannerText: {
-    fontSize: Theme.fontSize.xs,
-    color: Theme.colors.text.secondary,
+    fontSize: 12,
+    color: Colors.text.secondary,
     marginTop: 2,
   },
   editProfileButton: {
-    backgroundColor: Theme.colors.primary,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.lg,
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 20,
     alignItems: 'center',
-    ...Theme.shadows.medium,
   },
   editProfileText: {
-    color: Theme.colors.white,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
+    color: Colors.white,
+    fontSize: 15,
+    fontWeight: '600',
   },
   infoSection: {
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.lg,
+    marginHorizontal: 20,
+    marginBottom: 20,
   },
   infoCard: {
-    backgroundColor: Theme.colors.white,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.sm,
+    backgroundColor: Colors.white,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    ...Theme.shadows.small,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   infoLabel: {
-    fontSize: Theme.fontSize.sm,
-    color: Theme.colors.text.secondary,
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
   infoValue: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
-    color: Theme.colors.text.primary,
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   resetButton: {
-    backgroundColor: Theme.colors.white,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    backgroundColor: Colors.white,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 10,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: Theme.colors.error,
+    borderColor: Colors.error,
   },
   resetText: {
-    color: Theme.colors.error,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
+    color: Colors.error,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  logoutButton: {
+    backgroundColor: Colors.white,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  logoutText: {
+    color: Colors.text.primary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   menuArrow: {
     fontSize: 28,
-    color: Theme.colors.text.light,
-    marginLeft: Theme.spacing.sm,
+    color: Colors.text.light,
+    marginLeft: 8,
   },
   versionText: {
     textAlign: 'center',
-    fontSize: Theme.fontSize.xs,
-    color: Theme.colors.text.light,
-    paddingVertical: Theme.spacing.lg,
-    paddingBottom: Theme.spacing.xxl,
+    fontSize: 12,
+    color: Colors.text.light,
+    paddingVertical: 20,
+    paddingBottom: 40,
   },
-  // Modal styles
   modalContainer: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
+    backgroundColor: Colors.background,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: Theme.spacing.lg,
-    backgroundColor: Theme.colors.white,
+    padding: 20,
+    backgroundColor: Colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.border,
+    borderBottomColor: Colors.border,
   },
   modalCancel: {
-    fontSize: Theme.fontSize.md,
-    color: Theme.colors.text.secondary,
+    fontSize: 15,
+    color: Colors.text.secondary,
   },
   modalTitle: {
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.text.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text.primary,
   },
   modalSave: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   modalBody: {
-    padding: Theme.spacing.lg,
+    padding: 20,
   },
   fieldLabel: {
-    fontSize: Theme.fontSize.sm,
-    fontWeight: Theme.fontWeight.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
-    marginTop: Theme.spacing.md,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 6,
+    marginTop: 14,
   },
   fieldHint: {
-    fontSize: Theme.fontSize.xs,
-    color: Theme.colors.text.light,
+    fontSize: 12,
+    color: Colors.text.light,
     marginTop: 4,
     lineHeight: 16,
   },
   textInput: {
-    backgroundColor: Theme.colors.white,
+    backgroundColor: Colors.white,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
-    borderRadius: Theme.borderRadius.md,
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.sm,
-    fontSize: Theme.fontSize.md,
-    color: Theme.colors.text.primary,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: Colors.text.primary,
   },
   genderRow: {
     flexDirection: 'row',
-    gap: Theme.spacing.sm,
+    gap: 8,
   },
   genderOption: {
     flex: 1,
-    paddingVertical: Theme.spacing.sm,
-    paddingHorizontal: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
     borderWidth: 2,
-    borderColor: Theme.colors.border,
+    borderColor: Colors.border,
     alignItems: 'center',
-    backgroundColor: Theme.colors.white,
+    backgroundColor: Colors.white,
   },
   genderOptionActive: {
-    borderColor: Theme.colors.primary,
-    backgroundColor: '#F0ECFF',
+    borderColor: Colors.primary,
+    backgroundColor: '#E6FAF8',
   },
   genderOptionText: {
-    fontSize: Theme.fontSize.sm,
-    color: Theme.colors.text.secondary,
-    fontWeight: Theme.fontWeight.medium,
+    fontSize: 14,
+    color: Colors.text.secondary,
+    fontWeight: '500',
   },
   genderOptionTextActive: {
-    color: Theme.colors.primary,
-    fontWeight: Theme.fontWeight.bold,
+    color: Colors.primary,
+    fontWeight: '700',
   },
 });

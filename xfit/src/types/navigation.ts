@@ -2,6 +2,16 @@
  * Navigation type definitions for type-safe navigation
  */
 
+export type RootStackParamList = {
+  Splash: undefined;
+  Onboarding: undefined;
+  PhoneAuth: undefined;
+  OTPVerification: { phoneNumber: string; countryCode: string };
+  GettingStarted: undefined;
+  PrivacyConsent: undefined;
+  MainTabs: undefined;
+};
+
 export type RootTabParamList = {
   Home: undefined;
   Scan: undefined;
@@ -14,9 +24,14 @@ export type ScanStackParamList = {
   Calibration: {
     onComplete: (calibration: any) => void;
   };
+  PreparationChecklist: undefined;
   MultiCapture: {
     calibration?: any;
     knownHeight?: number;
+  };
+  Processing: {
+    result: any;
+    accuracyReport: any;
   };
   ScanResults: {
     result: any;

@@ -10,7 +10,7 @@ import {
   Alert,
   Share,
 } from 'react-native';
-import { Theme } from '../constants/theme';
+import { Colors } from '../constants/colors';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useUserStore } from '../stores/userStore';
 import { BodyMeasurement } from '../types/measurements';
@@ -39,7 +39,7 @@ export default function MeasurementsScreen({ navigation }: any) {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={Theme.colors.primary} />
+        <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={styles.loadingText}>Loading measurements...</Text>
       </View>
     );
@@ -107,9 +107,9 @@ export default function MeasurementsScreen({ navigation }: any) {
                 {accuracy && (
                   <Text style={[
                     styles.historyAccuracy,
-                    accuracy >= 85 && { color: Theme.colors.success },
-                    accuracy >= 70 && accuracy < 85 && { color: Theme.colors.warning },
-                    accuracy < 70 && { color: Theme.colors.error },
+                    accuracy >= 85 && { color: Colors.success },
+                    accuracy >= 70 && accuracy < 85 && { color: Colors.warning },
+                    accuracy < 70 && { color: Colors.error },
                   ]}>
                     {accuracy}%
                   </Text>
@@ -249,10 +249,10 @@ export default function MeasurementsScreen({ navigation }: any) {
           value={unit === 'inch'}
           onValueChange={(value) => setUnit(value ? 'inch' : 'cm')}
           trackColor={{
-            false: Theme.colors.primary,
-            true: Theme.colors.secondary,
+            false: Colors.primary,
+            true: Colors.secondary,
           }}
-          thumbColor={Theme.colors.white}
+          thumbColor={Colors.white}
         />
         <Text style={[styles.unitText, unit === 'inch' && styles.unitTextActive]}>
           INCH
@@ -311,212 +311,211 @@ export default function MeasurementsScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
+    backgroundColor: Colors.background,
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
-    padding: Theme.spacing.lg,
+    padding: 20,
   },
   loadingText: {
-    marginTop: Theme.spacing.md,
-    fontSize: Theme.fontSize.md,
-    color: Theme.colors.text.secondary,
+    marginTop: 12,
+    fontSize: 15,
+    color: Colors.text.secondary,
   },
   emptyIcon: {
     fontSize: 64,
-    marginBottom: Theme.spacing.md,
+    marginBottom: 12,
   },
   emptyTitle: {
-    fontSize: Theme.fontSize.xxl,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.sm,
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: Theme.fontSize.md,
-    color: Theme.colors.text.secondary,
+    fontSize: 15,
+    color: Colors.text.secondary,
     textAlign: 'center',
-    marginBottom: Theme.spacing.xl,
-    paddingHorizontal: Theme.spacing.lg,
+    marginBottom: 24,
+    paddingHorizontal: 20,
   },
   primaryButton: {
-    backgroundColor: Theme.colors.primary,
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
-    borderRadius: Theme.borderRadius.lg,
-    ...Theme.shadows.medium,
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
   },
   primaryButtonText: {
-    color: Theme.colors.white,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
+    color: Colors.white,
+    fontSize: 15,
+    fontWeight: '600',
   },
   header: {
-    padding: Theme.spacing.lg,
-    backgroundColor: Theme.colors.white,
-    marginBottom: Theme.spacing.sm,
+    padding: 20,
+    backgroundColor: Colors.white,
+    marginBottom: 8,
   },
   headerTitle: {
-    fontSize: Theme.fontSize.xxl,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
   headerSubtitle: {
-    fontSize: Theme.fontSize.sm,
-    color: Theme.colors.text.secondary,
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
   accuracyBanner: {
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.sm,
-    padding: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.md,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
+    borderColor: Colors.border,
   },
   accuracyBannerText: {
-    fontSize: Theme.fontSize.sm,
-    fontWeight: Theme.fontWeight.medium,
-    color: Theme.colors.text.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.text.primary,
   },
   accuracyWarning: {
-    fontSize: Theme.fontSize.xs,
-    color: Theme.colors.text.secondary,
+    fontSize: 12,
+    color: Colors.text.secondary,
     marginTop: 4,
   },
   unitToggle: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: Theme.spacing.md,
-    backgroundColor: Theme.colors.white,
-    marginBottom: Theme.spacing.md,
-    gap: Theme.spacing.md,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+    marginBottom: 12,
+    gap: 14,
   },
   unitText: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
-    color: Theme.colors.text.secondary,
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text.secondary,
   },
   unitTextActive: {
-    color: Theme.colors.primary,
+    color: Colors.primary,
   },
   measurementsContainer: {
-    paddingHorizontal: Theme.spacing.lg,
-    paddingBottom: Theme.spacing.lg,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   measurementCard: {
-    backgroundColor: Theme.colors.white,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.sm,
+    backgroundColor: Colors.white,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    ...Theme.shadows.small,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   measurementHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.sm,
+    gap: 8,
   },
   measurementIcon: {
     fontSize: 24,
   },
   measurementLabel: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.medium,
-    color: Theme.colors.text.primary,
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text.primary,
   },
   confidenceText: {
-    fontSize: Theme.fontSize.xs,
+    fontSize: 12,
     marginTop: 2,
   },
   measurementValue: {
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.semibold,
-    color: Theme.colors.primary,
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.primary,
   },
   exportButton: {
-    backgroundColor: Theme.colors.primary,
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
-    borderRadius: Theme.borderRadius.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 10,
     alignItems: 'center',
-    ...Theme.shadows.medium,
   },
   exportButtonText: {
-    color: Theme.colors.white,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
+    color: Colors.white,
+    fontSize: 15,
+    fontWeight: '600',
   },
   historyButton: {
-    backgroundColor: Theme.colors.white,
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
-    borderRadius: Theme.borderRadius.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xxl,
+    backgroundColor: Colors.white,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 40,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: Theme.colors.primary,
+    borderColor: Colors.primary,
   },
   historyButtonText: {
-    color: Theme.colors.primary,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: '600',
   },
-  // History view styles
   historyCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Theme.colors.white,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.sm,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    ...Theme.shadows.small,
+    backgroundColor: Colors.white,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   historyLeft: {
     flex: 1,
   },
   historyDate: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.medium,
-    color: Theme.colors.text.primary,
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text.primary,
   },
   historyInfo: {
-    fontSize: Theme.fontSize.sm,
-    color: Theme.colors.text.secondary,
+    fontSize: 14,
+    color: Colors.text.secondary,
     marginTop: 2,
   },
   historyRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Theme.spacing.md,
+    gap: 14,
   },
   historyAccuracy: {
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.bold,
+    fontSize: 18,
+    fontWeight: '700',
   },
   deleteIcon: {
     fontSize: 18,
   },
   outlineButton: {
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
-    borderRadius: Theme.borderRadius.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xxl,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 40,
     alignItems: 'center',
   },
   outlineButtonText: {
-    color: Theme.colors.primary,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.medium,
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: '500',
   },
 });

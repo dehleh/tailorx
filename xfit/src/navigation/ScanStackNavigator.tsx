@@ -1,20 +1,18 @@
 /**
  * Scan Stack Navigator
  * 
- * Stack flow: ScanHome → Calibration → MultiCapture → ScanResults
- * 
- * ScanHome is the MultiCaptureScanScreen (camera view).
- * Calibration is presented before scanning if no calibration exists.
- * ScanResults shows the final measurement results.
+ * Stack flow: PreparationChecklist → ScanHome → Calibration → MultiCapture → Processing → ScanResults
  */
 
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ScanStackParamList } from '../types/navigation';
-import { Theme } from '../constants/theme';
+import { Colors } from '../constants/colors';
 
+import PreparationChecklistScreen from '../screens/PreparationChecklistScreen';
 import MultiCaptureScanScreen from '../screens/MultiCaptureScanScreen';
 import CalibrationScreen from '../screens/CalibrationScreen';
+import ProcessingScreen from '../screens/ProcessingScreen';
 import ScanResultsScreen from '../screens/ScanResultsScreen';
 
 const Stack = createNativeStackNavigator<ScanStackParamList>();
@@ -24,9 +22,9 @@ export default function ScanStackNavigator() {
     <Stack.Navigator
       screenOptions={{
         headerStyle: {
-          backgroundColor: Theme.colors.white,
+          backgroundColor: Colors.white,
         },
-        headerTintColor: Theme.colors.text.primary,
+        headerTintColor: Colors.text.primary,
         headerTitleStyle: {
           fontWeight: '700' as const,
           fontSize: 18,
@@ -34,6 +32,11 @@ export default function ScanStackNavigator() {
         headerShadowVisible: false,
       }}
     >
+      <Stack.Screen
+        name="PreparationChecklist"
+        component={PreparationChecklistScreen}
+        options={{ title: 'Prepare to Scan' }}
+      />
       <Stack.Screen
         name="ScanHome"
         component={MultiCaptureScanScreen}
@@ -48,11 +51,16 @@ export default function ScanStackNavigator() {
         }}
       />
       <Stack.Screen
+        name="Processing"
+        component={ProcessingScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
         name="ScanResults"
         component={ScanResultsScreen}
         options={{
           title: 'Results',
-          headerLeft: () => null, // Prevent back to camera during results
+          headerLeft: () => null,
         }}
       />
     </Stack.Navigator>

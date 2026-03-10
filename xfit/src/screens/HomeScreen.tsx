@@ -1,104 +1,113 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Theme } from '../constants/theme';
+import { Colors } from '../constants/colors';
 import { useMeasurementStore } from '../stores/measurementStore';
-import { poseProcessor } from '../services/poseProcessor';
+import { useAuthStore } from '../stores/authStore';
+import { formatMeasurement, timeAgo } from '../utils/helpers';
 
 export default function HomeScreen({ navigation }: any) {
-  const measurements = useMeasurementStore((state) => state.measurements);
-  const totalScans = measurements.length;
-
-  // Check pose server connectivity on mount
-  const [poseStatus, setPoseStatus] = useState<'checking' | 'cloud' | 'fallback'>('checking');
-  useEffect(() => {
-    poseProcessor.checkCloudAvailability().then((available) => {
-      setPoseStatus(available ? 'cloud' : 'fallback');
-    });
-  }, []);
-
-  const features = [
-    {
-      id: '1',
-      title: 'Multi-Angle Body Scan',
-      description: 'Front + side + back capture for maximum accuracy (±1-2cm)',
-      icon: '📸',
-      action: () => navigation.navigate('Scan'),
-    },
-    {
-      id: '2',
-      title: 'View Measurements',
-      description: 'Track your measurement history and progress',
-      icon: '📏',
-      action: () => navigation.navigate('Measurements'),
-    },
-    {
-      id: '3',
-      title: 'Your Profile',
-      description: 'Manage your personal information and preferences',
-      icon: '👤',
-      action: () => navigation.navigate('Profile'),
-    },
-  ];
+  const measurements = useMeasurementStore((s) => s.measurements);
+  const authUser = useAuthStore((s) => s.user);
+  const displayName = authUser?.displayName || 'User';
+  const latestMeasurements = measurements.slice(-3).reverse();
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.logo}>Tailor-X</Text>
-        <Text style={styles.tagline}>Perfect Fit, Every Time</Text>
-      </View>
-
-      <View style={styles.hero}>
-        <Text style={styles.heroTitle}>Get Accurate Body Measurements</Text>
-        <Text style={styles.heroSubtitle}>
-          Using advanced AI technology to ensure the perfect fit for your clothing
-        </Text>
-      </View>
-
-      {/* Pose server status */}
-      <View style={[
-        styles.statusBanner,
-        poseStatus === 'cloud' && styles.statusBannerGood,
-        poseStatus === 'fallback' && styles.statusBannerWarn,
-      ]}>
-        <Text style={styles.statusText}>
-          {poseStatus === 'checking' && '⏳ Checking pose server...'}
-          {poseStatus === 'cloud' && '✅ MediaPipe Server Connected — ±1-2cm accuracy'}
-          {poseStatus === 'fallback' && '⚠️ Pose server offline — using estimation (±4-5cm)'}
-        </Text>
-        {poseStatus === 'fallback' && (
-          <Text style={styles.statusHint}>
-            Deploy the server for best accuracy. See server/README.md
+        <View style={styles.headerLeft}>
+          <Text style={styles.greeting}>{displayName}</Text>
+          <Text style={styles.subGreeting}>Ready to get your perfect fit?</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.avatarCircle}
+          onPress={() => navigation.navigate('Profile')}
+        >
+          <Text style={styles.avatarText}>
+            {displayName.charAt(0).toUpperCase()}
           </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Start New Scan Card */}
+      <TouchableOpacity
+        style={styles.scanCard}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('Scan')}
+      >
+        <View style={styles.scanCardInner}>
+          <View style={styles.scanCardDot} />
+          <Text style={styles.scanCardTitle}>Start New Scan</Text>
+          <Text style={styles.scanCardDesc}>
+            Quickly capture your measurements in under 5 minutes
+          </Text>
+          <View style={styles.scanCardButton}>
+            <Text style={styles.scanCardButtonText}>Begin Scanning</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Recent Measurements */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent measurements</Text>
+          {measurements.length > 0 && (
+            <TouchableOpacity onPress={() => navigation.navigate('Measurements')}>
+              <Text style={styles.viewAllText}>View all</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {latestMeasurements.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.measurementScroll}>
+            {latestMeasurements.map((m) => (
+              <View key={m.id} style={styles.measurementChip}>
+                <Text style={styles.chipAccuracy}>
+                  {m.accuracy?.overallScore ? `${Math.round(m.accuracy.overallScore)}% accurate` : 'Scan'}
+                </Text>
+                <Text style={styles.chipDate}>{timeAgo(m.date)}</Text>
+                <View style={styles.chipRow}>
+                  {(['chest', 'waist', 'hips', 'shoulders'] as const).map((key) => {
+                    const val = m.measurements[key];
+                    if (!val) return null;
+                    return (
+                      <View key={key} style={styles.chipMeasure}>
+                        <Text style={styles.chipLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+                        <Text style={styles.chipValue}>{formatMeasurement(val, m.unit)}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>📏</Text>
+            <Text style={styles.emptyText}>No measurements yet</Text>
+            <Text style={styles.emptySubtext}>Start your first scan to see results here</Text>
+          </View>
         )}
       </View>
 
-      <View style={styles.featuresContainer}>
-        {features.map((feature) => (
-          <TouchableOpacity
-            key={feature.id}
-            style={styles.featureCard}
-            onPress={feature.action}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.featureIcon}>{feature.icon}</Text>
-            <Text style={styles.featureTitle}>{feature.title}</Text>
-            <Text style={styles.featureDescription}>{feature.description}</Text>
-          </TouchableOpacity>
-        ))}
+      {/* Help & Tutorials */}
+      <View style={styles.helpCard}>
+        <View style={styles.helpContent}>
+          <Text style={styles.helpIcon}>📚</Text>
+          <Text style={styles.helpText}>Help and Tutorials</Text>
+        </View>
+        <TouchableOpacity style={styles.tutorialButton}>
+          <Text style={styles.tutorialButtonText}>View tutorials</Text>
+        </TouchableOpacity>
       </View>
 
-      {totalScans > 0 && (
-        <View style={styles.statsBar}>
-          <Text style={styles.statsText}>📊 {totalScans} scan{totalScans !== 1 ? 's' : ''} completed</Text>
-        </View>
-      )}
+      {/* Privacy note */}
+      <View style={styles.privacyRow}>
+        <Text style={styles.privacyDot}>🟢</Text>
+        <Text style={styles.privacyText}>Your data is private and secure</Text>
+      </View>
 
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => navigation.navigate('Scan')}
-      >
-        <Text style={styles.primaryButtonText}>Start Multi-Angle Scan</Text>
-      </TouchableOpacity>
+      <View style={{ height: 24 }} />
     </ScrollView>
   );
 }
@@ -106,122 +115,220 @@ export default function HomeScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
+    backgroundColor: Colors.background,
   },
   header: {
-    paddingTop: Theme.spacing.xxl,
-    paddingHorizontal: Theme.spacing.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: Theme.spacing.lg,
+    paddingHorizontal: 20,
+    paddingTop: 56,
+    paddingBottom: 20,
   },
-  logo: {
-    fontSize: Theme.fontSize.xxxl,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.primary,
-    marginBottom: Theme.spacing.xs,
+  headerLeft: {
+    flex: 1,
   },
-  tagline: {
-    fontSize: Theme.fontSize.md,
-    color: Theme.colors.text.secondary,
+  greeting: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
-  hero: {
-    paddingHorizontal: Theme.spacing.lg,
-    paddingVertical: Theme.spacing.xl,
-    backgroundColor: Theme.colors.white,
-    marginBottom: Theme.spacing.lg,
+  subGreeting: {
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
-  heroTitle: {
-    fontSize: Theme.fontSize.xxl,
-    fontWeight: Theme.fontWeight.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.sm,
-  },
-  heroSubtitle: {
-    fontSize: Theme.fontSize.md,
-    color: Theme.colors.text.secondary,
-    lineHeight: 24,
-  },
-  featuresContainer: {
-    paddingHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xl,
-  },
-  featureCard: {
-    backgroundColor: Theme.colors.white,
-    padding: Theme.spacing.lg,
-    borderRadius: Theme.borderRadius.lg,
-    marginBottom: Theme.spacing.md,
-    ...Theme.shadows.medium,
-  },
-  featureIcon: {
-    fontSize: 40,
-    marginBottom: Theme.spacing.sm,
-  },
-  featureTitle: {
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
-  },
-  featureDescription: {
-    fontSize: Theme.fontSize.sm,
-    color: Theme.colors.text.secondary,
-    lineHeight: 20,
-  },
-  statsBar: {
-    backgroundColor: Theme.colors.white,
-    paddingVertical: Theme.spacing.sm,
-    paddingHorizontal: Theme.spacing.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
     alignItems: 'center',
-    ...Theme.shadows.small,
+    marginLeft: 12,
   },
-  statsText: {
-    fontSize: Theme.fontSize.sm,
-    color: Theme.colors.primary,
-    fontWeight: Theme.fontWeight.semibold,
+  avatarText: {
+    color: Colors.white,
+    fontSize: 18,
+    fontWeight: '700',
   },
-  statusBanner: {
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.lg,
-    backgroundColor: Theme.colors.white,
+  // Scan CTA card
+  scanCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    borderRadius: 16,
+    backgroundColor: Colors.secondary,
+    overflow: 'hidden',
+  },
+  scanCardInner: {
+    padding: 20,
+  },
+  scanCardDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.primary,
+    marginBottom: 12,
+  },
+  scanCardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.white,
+    marginBottom: 6,
+  },
+  scanCardDesc: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  scanCardButton: {
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    alignSelf: 'flex-start',
+  },
+  scanCardButtonText: {
+    color: Colors.secondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Section
+  section: {
+    marginBottom: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  viewAllText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  measurementScroll: {
+    paddingLeft: 20,
+  },
+  measurementChip: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginRight: 12,
+    width: 260,
     borderWidth: 1,
-    borderColor: Theme.colors.border,
+    borderColor: Colors.border,
   },
-  statusBannerGood: {
-    backgroundColor: '#D1FAE5',
-    borderColor: '#10B981',
+  chipAccuracy: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.success,
+    marginBottom: 4,
   },
-  statusBannerWarn: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
+  chipDate: {
+    fontSize: 12,
+    color: Colors.text.light,
+    marginBottom: 10,
   },
-  statusText: {
-    fontSize: Theme.fontSize.sm,
-    fontWeight: Theme.fontWeight.medium,
-    color: Theme.colors.text.primary,
+  chipRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  statusHint: {
-    fontSize: Theme.fontSize.xs,
-    color: Theme.colors.text.secondary,
-    marginTop: 4,
-  },
-  primaryButton: {
-    backgroundColor: Theme.colors.primary,
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
-    borderRadius: Theme.borderRadius.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xxl,
+  chipMeasure: {
     alignItems: 'center',
-    ...Theme.shadows.medium,
   },
-  primaryButtonText: {
-    color: Theme.colors.white,
-    fontSize: Theme.fontSize.lg,
-    fontWeight: Theme.fontWeight.semibold,
+  chipLabel: {
+    fontSize: 11,
+    color: Colors.text.light,
+    marginBottom: 2,
+  },
+  chipValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    marginHorizontal: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  emptyIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+  },
+  // Help card
+  helpCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  helpContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  helpIcon: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  helpText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.text.primary,
+  },
+  tutorialButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  tutorialButtonText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Privacy
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  privacyDot: {
+    fontSize: 10,
+    marginRight: 8,
+  },
+  privacyText: {
+    fontSize: 13,
+    color: Colors.text.secondary,
   },
 });
