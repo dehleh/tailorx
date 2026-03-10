@@ -75,6 +75,14 @@ SMTP_USER = os.environ.get("SMTP_USER", "")       # e.g. your-email@gmail.com
 SMTP_PASS = os.environ.get("SMTP_PASS", "")       # Gmail App Password (not your login password)
 SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER)
 
+# Log email config at startup
+if RESEND_API_KEY:
+    logger.info(f"Email: Resend API configured (from: {RESEND_FROM})")
+elif SMTP_USER:
+    logger.info(f"Email: SMTP configured (host: {SMTP_HOST}, port: {SMTP_PORT})")
+else:
+    logger.warning("Email: No email provider configured! Set RESEND_API_KEY or SMTP_USER/SMTP_PASS")
+
 # In-memory OTP store: { email: { code, expires_at } }
 _otp_store: dict[str, dict] = {}
 
@@ -1325,7 +1333,7 @@ def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            if resp.status == 200:
+            if resp.status in (200, 201):
                 logger.info(f"OTP email sent via Resend to {to_email}")
                 return True
             body = resp.read().decode()
