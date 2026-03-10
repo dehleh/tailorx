@@ -1,0 +1,6 @@
+*.task
+*.tflite
+__pycache__
+*.pyc
+.env
+test_*.py

@@ -32,6 +32,11 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+
+# ML model binaries
+*.task
+*.tflite
 
 # typescript
 *.tsbuildinfo

@@ -13,8 +13,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server.py .
 
-# Download model at build time
-RUN python -c "import urllib.request; urllib.request.urlretrieve('https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task', 'pose_landmarker_full.task')"
+# Download models at build time
+RUN python -c "import urllib.request; \
+    urllib.request.urlretrieve('https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task', 'pose_landmarker_full.task'); \
+    urllib.request.urlretrieve('https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite', 'selfie_segmenter.tflite')"
 
 EXPOSE 8080
 

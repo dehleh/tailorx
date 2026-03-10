@@ -32,7 +32,12 @@ import io
 import time
 import os
 import logging
+import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Optional, Any
+from datetime import datetime, timedelta
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -54,6 +59,16 @@ API_KEY = os.environ.get("TAILORX_API_KEY", "")
 PORT = int(os.environ.get("PORT", 8000))
 MODEL_PATH = os.environ.get("MODEL_PATH", "pose_landmarker_full.task")
 SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "selfie_segmenter.tflite")
+
+# SMTP config for email OTP
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
+SMTP_USER = os.environ.get("SMTP_USER", "")       # e.g. your-email@gmail.com
+SMTP_PASS = os.environ.get("SMTP_PASS", "")       # Gmail App Password (not your login password)
+SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER)
+
+# In-memory OTP store: { email: { code, expires_at } }
+_otp_store: dict[str, dict] = {}
 
 # ============================================================
 # MODELS
@@ -78,6 +93,13 @@ class LandmarkResponse(BaseModel):
     z: float
     visibility: float
     name: str
+
+class OTPSendRequest(BaseModel):
+    email: str
+
+class OTPVerifyRequest(BaseModel):
+    email: str
+    code: str
 
 class PoseResponse(BaseModel):
     landmarks: list[LandmarkResponse]
@@ -1265,6 +1287,95 @@ async def detect_pose_refined(
     except Exception as e:
         logger.error(f"Refined pose detection failed: {e}")
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+
+
+# ============================================================
+# EMAIL OTP ENDPOINTS
+# ============================================================
+
+def _send_email(to_email: str, subject: str, html_body: str) -> bool:
+    """Send an email via SMTP."""
+    if not SMTP_USER or not SMTP_PASS:
+        logger.error("SMTP_USER and SMTP_PASS must be set to send emails")
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = SMTP_FROM or SMTP_USER
+    msg["To"] = to_email
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(SMTP_USER, to_email, msg.as_string())
+        logger.info(f"OTP email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return False
+
+
+@app.post("/v1/auth/send-otp")
+async def send_otp(req: OTPSendRequest):
+    """Generate a 6-digit code and email it."""
+    email = req.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    # Rate limit: don't re-send if a valid code exists and was sent < 60s ago
+    existing = _otp_store.get(email)
+    if existing and existing.get("sent_at"):
+        elapsed = (datetime.utcnow() - existing["sent_at"]).total_seconds()
+        if elapsed < 60:
+            return {"success": True, "message": "Code already sent, check your email"}
+
+    code = f"{random.randint(100000, 999999)}"
+    _otp_store[email] = {
+        "code": code,
+        "expires_at": datetime.utcnow() + timedelta(minutes=10),
+        "sent_at": datetime.utcnow(),
+    }
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+      <h2 style="color:#0F2B3C;">Tailor-XFit Verification</h2>
+      <p style="color:#5A6B7B;">Your verification code is:</p>
+      <div style="background:#E0F7F5;border-radius:12px;padding:24px;text-align:center;margin:24px 0;">
+        <span style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#0F2B3C;">{code}</span>
+      </div>
+      <p style="color:#5A6B7B;font-size:14px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
+      <p style="color:#94A3B8;font-size:12px;margin-top:32px;">— Tailor-XFit Team</p>
+    </div>
+    """
+
+    sent = _send_email(email, f"Your Tailor-XFit code: {code}", html)
+    if not sent:
+        raise HTTPException(status_code=500, detail="Failed to send email. Check server SMTP config.")
+
+    return {"success": True, "message": "Verification code sent"}
+
+
+@app.post("/v1/auth/verify-otp")
+async def verify_otp(req: OTPVerifyRequest):
+    """Verify the 6-digit OTP code."""
+    email = req.email.strip().lower()
+    stored = _otp_store.get(email)
+
+    if not stored:
+        raise HTTPException(status_code=400, detail="No code was sent to this email")
+
+    if datetime.utcnow() > stored["expires_at"]:
+        del _otp_store[email]
+        raise HTTPException(status_code=400, detail="Code has expired, request a new one")
+
+    if stored["code"] != req.code.strip():
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    # Code is valid — clean up
+    del _otp_store[email]
+    return {"success": True, "verified": True, "email": email}
 
 
 # ============================================================
