@@ -30,22 +30,20 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   setUser: async (user: AuthUser) => {
     try {
-      set({ isLoading: true, error: null });
       await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(user));
       set({
         user,
         isAuthenticated: true,
         isOnboarded: user.isOnboarded,
-        isLoading: false,
+        error: null,
       });
     } catch {
-      set({ error: 'Failed to save auth data', isLoading: false });
+      set({ error: 'Failed to save auth data' });
     }
   },
 
   updateUser: async (data: Partial<AuthUser>) => {
     try {
-      set({ isLoading: true, error: null });
       const current = get().user;
       if (!current) throw new Error('No user');
       const updated = { ...current, ...data };
@@ -53,10 +51,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({
         user: updated,
         isOnboarded: updated.isOnboarded,
-        isLoading: false,
+        error: null,
       });
     } catch {
-      set({ error: 'Failed to update auth data', isLoading: false });
+      set({ error: 'Failed to update auth data' });
     }
   },
 

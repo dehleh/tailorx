@@ -111,10 +111,14 @@ export default function AppNavigator() {
             <RootStack.Screen name="MainTabs" component={MainTabs} />
           ) : (
             <>
-              <RootStack.Screen name="Splash" component={SplashScreen} />
-              <RootStack.Screen name="Onboarding" component={OnboardingScreen} />
-              <RootStack.Screen name="EmailAuth" component={EmailAuthScreen} />
-              <RootStack.Screen name="OTPVerification" component={OTPVerificationScreen} />
+              {!isAuthenticated ? (
+                <>
+                  <RootStack.Screen name="Splash" component={SplashScreen} />
+                  <RootStack.Screen name="Onboarding" component={OnboardingScreen} />
+                  <RootStack.Screen name="EmailAuth" component={EmailAuthScreen} />
+                  <RootStack.Screen name="OTPVerification" component={OTPVerificationScreen} />
+                </>
+              ) : null}
               <RootStack.Screen name="GettingStarted" component={GettingStartedScreen} />
               <RootStack.Screen name="PrivacyConsent" component={PrivacyConsentScreen} />
             </>

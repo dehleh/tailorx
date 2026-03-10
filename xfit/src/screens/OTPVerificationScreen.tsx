@@ -57,6 +57,10 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
         return;
       }
 
+      // Navigate FIRST, then update auth state to prevent navigator re-render
+      // from resetting the navigation stack
+      navigation.navigate('GettingStarted');
+      
       await setUser({
         id: generateId(),
         email,
@@ -66,7 +70,6 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
         createdAt: new Date().toISOString(),
       });
       setIsLoading(false);
-      navigation.navigate('GettingStarted');
     } catch (e: any) {
       setIsLoading(false);
       setError('Network error — is the server running?');
