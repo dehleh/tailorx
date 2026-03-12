@@ -73,7 +73,7 @@ export function CustomTabBar({ state, descriptors, navigation }: CustomTabBarPro
                 <View style={[styles.scanButton, isFocused && styles.scanButtonActive]}>
                   <Ionicons
                     name={isFocused ? 'scan' : 'scan-outline'}
-                    size={28}
+                    size={24}
                     color={Colors.white}
                   />
                 </View>
@@ -94,7 +94,7 @@ export function CustomTabBar({ state, descriptors, navigation }: CustomTabBarPro
             >
               <Ionicons
                 name={isFocused ? config.activeIcon : config.icon}
-                size={24}
+                size={22}
                 color={isFocused ? Colors.primary : Colors.tabInactive}
               />
               {isFocused && <View style={styles.activeIndicator} />}
@@ -106,8 +106,8 @@ export function CustomTabBar({ state, descriptors, navigation }: CustomTabBarPro
   );
 }
 
-const TAB_BAR_HEIGHT = 64;
-const SCAN_BUTTON_SIZE = 56;
+const TAB_BAR_HEIGHT = 52;
+const SCAN_BUTTON_SIZE = 48;
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -116,18 +116,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 6,
     backgroundColor: 'transparent',
   },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-evenly',
-    width: SCREEN_WIDTH - 32,
+    width: SCREEN_WIDTH - 48,
     height: TAB_BAR_HEIGHT,
     backgroundColor: Colors.secondary,
-    borderRadius: 32,
-    paddingHorizontal: 8,
+    borderRadius: 28,
+    paddingHorizontal: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   },
   activeIndicator: {
     position: 'absolute',
-    bottom: 12,
+    bottom: 10,
     width: 4,
     height: 4,
     borderRadius: 2,
@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -28,
+    marginTop: -22,
   },
   scanButton: {
     width: SCAN_BUTTON_SIZE,
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
-    borderWidth: 3,
+    borderWidth: 2.5,
     borderColor: Colors.secondary,
   },
   scanButtonActive: {
