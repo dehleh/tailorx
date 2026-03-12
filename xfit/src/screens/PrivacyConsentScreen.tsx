@@ -27,7 +27,8 @@ export default function PrivacyConsentScreen({ navigation }: any) {
   const handleAccept = async () => {
     await acceptPrivacy();
     await completeOnboarding();
-    navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+    // Navigator will automatically switch to MainTabs when
+    // isAuthenticated && isOnboarded becomes true.
   };
 
   return (

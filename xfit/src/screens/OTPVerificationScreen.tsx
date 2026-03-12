@@ -57,10 +57,9 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
         return;
       }
 
-      // Navigate FIRST, then update auth state to prevent navigator re-render
-      // from resetting the navigation stack
-      navigation.navigate('GettingStarted');
-      
+      // Set auth state — the navigator's conditional rendering will
+      // automatically switch to the GettingStarted screen when
+      // isAuthenticated becomes true and isOnboarded is false.
       await setUser({
         id: generateId(),
         email,
@@ -69,7 +68,6 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
         isPrivacyAccepted: false,
         createdAt: new Date().toISOString(),
       });
-      setIsLoading(false);
     } catch (e: any) {
       setIsLoading(false);
       setError('Network error — is the server running?');
