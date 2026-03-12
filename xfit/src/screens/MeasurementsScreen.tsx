@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     borderRadius: 12,
     marginHorizontal: 20,
-    marginBottom: 40,
+    marginBottom: 80,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: Colors.primary,
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     borderRadius: 12,
     marginHorizontal: 20,
-    marginBottom: 40,
+    marginBottom: 80,
     alignItems: 'center',
   },
   outlineButtonText: {

@@ -107,7 +107,7 @@ export default function HomeScreen({ navigation }: any) {
         <Text style={styles.privacyText}>Your data is private and secure</Text>
       </View>
 
-      <View style={{ height: 24 }} />
+      <View style={{ height: 80 }} />
     </ScrollView>
   );
 }

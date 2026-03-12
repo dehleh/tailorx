@@ -499,7 +499,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text.light,
     paddingVertical: 20,
-    paddingBottom: 40,
+    paddingBottom: 80,
   },
   modalContainer: {
     flex: 1,
