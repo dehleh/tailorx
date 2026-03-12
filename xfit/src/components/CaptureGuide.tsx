@@ -12,22 +12,21 @@ interface CaptureGuideProps {
 /**
  * Visual overlay guide for body capture
  * Shows the outline and instructions for each capture angle
+ * 
+ * Layout is designed to sit below the top bar (~110px from top)
+ * and above the bottom controls (~160px from bottom).
  */
 export function CaptureGuide({ captureType, isReady }: CaptureGuideProps) {
   const guideConfig = GUIDE_CONFIGS[captureType];
 
   return (
     <View style={styles.container} pointerEvents="none">
-      {/* Top instruction area */}
-      <View style={styles.topInstruction}>
-        <View style={styles.instructionBadge}>
-          <Text style={styles.badgeEmoji}>{guideConfig.emoji}</Text>
-          <Text style={styles.badgeText}>{guideConfig.title}</Text>
-        </View>
+      {/* Instruction text — sits below the top bar progress indicator */}
+      <View style={styles.instructionArea}>
         <Text style={styles.instructionText}>{guideConfig.instruction}</Text>
       </View>
 
-      {/* Body outline guide */}
+      {/* Body outline guide — centered in available space */}
       <View style={styles.outlineContainer}>
         <View style={[
           styles.bodyOutline,
@@ -54,25 +53,26 @@ export function CaptureGuide({ captureType, isReady }: CaptureGuideProps) {
           </View>
         </View>
 
-        {/* Alignment marks */}
+        {/* Alignment center line */}
         <View style={styles.centerLine} />
       </View>
 
-      {/* Bottom tips */}
-      <View style={styles.bottomTips}>
-        {guideConfig.tips.map((tip, index) => (
-          <View key={index} style={styles.tipRow}>
-            <Text style={styles.tipBullet}>•</Text>
-            <Text style={styles.tipText}>{tip}</Text>
-          </View>
-        ))}
-      </View>
+      {/* Tips + status — compact area above the bottom controls */}
+      <View style={styles.bottomSection}>
+        <View style={styles.tipsContainer}>
+          {guideConfig.tips.map((tip, index) => (
+            <View key={index} style={styles.tipRow}>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>{tip}</Text>
+            </View>
+          ))}
+        </View>
 
-      {/* Status indicator */}
-      <View style={[styles.statusBar, isReady ? styles.statusReady : styles.statusPending]}>
-        <Text style={styles.statusText}>
-          {isReady ? '✅ Ready to capture' : '⏳ Position your body in the guide'}
-        </Text>
+        <View style={[styles.statusBar, isReady ? styles.statusReady : styles.statusPending]}>
+          <Text style={styles.statusText}>
+            {isReady ? '✅ Ready to capture' : '⏳ Position your body in the guide'}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -119,36 +119,23 @@ const GUIDE_CONFIGS = {
 // STYLES
 // ============================================================
 
-const GUIDE_WIDTH = SCREEN_WIDTH * 0.55;
-const GUIDE_HEIGHT = SCREEN_HEIGHT * 0.55;
+const GUIDE_WIDTH = SCREEN_WIDTH * 0.5;
+const GUIDE_HEIGHT = SCREEN_HEIGHT * 0.42;
+
+// Reserve space for the top bar and bottom controls to prevent overlap
+const TOP_RESERVED = 120;  // top bar height
+const BOTTOM_RESERVED = 170; // bottom controls height
 
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
+    top: TOP_RESERVED,
+    bottom: BOTTOM_RESERVED,
     justifyContent: 'space-between',
   },
-  topInstruction: {
+  instructionArea: {
     alignItems: 'center',
-    paddingTop: 60,
     paddingHorizontal: Theme.spacing.lg,
-  },
-  instructionBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(107, 78, 255, 0.85)',
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.full,
-    marginBottom: Theme.spacing.sm,
-  },
-  badgeEmoji: {
-    fontSize: 20,
-    marginRight: Theme.spacing.sm,
-  },
-  badgeText: {
-    color: Theme.colors.white,
-    fontSize: Theme.fontSize.md,
-    fontWeight: Theme.fontWeight.semibold,
   },
   instructionText: {
     color: Theme.colors.white,
@@ -156,13 +143,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.xs,
-    borderRadius: Theme.borderRadius.md,
+    paddingVertical: 6,
+    borderRadius: Theme.borderRadius.full,
+    overflow: 'hidden',
   },
   outlineContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
+    marginVertical: 8,
   },
   bodyOutline: {
     width: GUIDE_WIDTH,
@@ -174,27 +163,27 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   bodyOutlinePending: {
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   bodyOutlineReady: {
     borderColor: Theme.colors.success,
   },
   headCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderColor: 'rgba(255, 255, 255, 0.35)',
     borderStyle: 'dashed',
   },
   headCircleReady: {
     borderColor: Theme.colors.success,
   },
   bodyShape: {
-    width: '70%',
-    height: '45%',
+    width: '68%',
+    height: '42%',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
     borderStyle: 'dashed',
     borderRadius: 20,
     marginTop: 5,
@@ -205,30 +194,30 @@ const styles = StyleSheet.create({
   },
   shoulderLine: {
     height: 1,
-    backgroundColor: 'rgba(255, 107, 157, 0.4)',
+    backgroundColor: 'rgba(255, 107, 157, 0.35)',
     marginHorizontal: 10,
   },
   waistLine: {
     height: 1,
-    backgroundColor: 'rgba(78, 205, 196, 0.4)',
+    backgroundColor: 'rgba(78, 205, 196, 0.35)',
     marginHorizontal: 30,
   },
   hipLine: {
     height: 1,
-    backgroundColor: 'rgba(245, 158, 11, 0.4)',
+    backgroundColor: 'rgba(245, 158, 11, 0.35)',
     marginHorizontal: 20,
   },
   legsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 15,
+    gap: 14,
     marginTop: 3,
   },
   leg: {
-    width: 20,
-    height: '28%',
+    width: 18,
+    height: '26%',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
     borderStyle: 'dashed',
     borderRadius: 8,
   },
@@ -239,34 +228,35 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 1,
     height: GUIDE_HEIGHT,
-    backgroundColor: 'rgba(107, 78, 255, 0.2)',
+    backgroundColor: 'rgba(107, 78, 255, 0.15)',
   },
-  bottomTips: {
-    paddingHorizontal: Theme.spacing.xl,
-    paddingBottom: Theme.spacing.md,
+  bottomSection: {
+    paddingHorizontal: Theme.spacing.lg,
+    gap: 8,
+  },
+  tipsContainer: {
+    paddingHorizontal: Theme.spacing.sm,
   },
   tipRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   tipBullet: {
     color: Theme.colors.white,
     fontSize: Theme.fontSize.sm,
     marginRight: Theme.spacing.sm,
-    opacity: 0.8,
+    opacity: 0.7,
   },
   tipText: {
     color: Theme.colors.white,
     fontSize: Theme.fontSize.xs,
-    opacity: 0.8,
+    opacity: 0.75,
   },
   statusBar: {
-    paddingVertical: Theme.spacing.sm,
+    paddingVertical: 10,
     paddingHorizontal: Theme.spacing.lg,
-    marginHorizontal: Theme.spacing.lg,
-    marginBottom: 120,
-    borderRadius: Theme.borderRadius.lg,
+    borderRadius: Theme.borderRadius.full,
     alignItems: 'center',
   },
   statusPending: {

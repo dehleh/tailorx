@@ -502,7 +502,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           </>
         )}
 
-        {/* Top bar */}
+        {/* Top bar — close button + step indicator */}
         <View style={styles.topBar}>
           <TouchableOpacity
             style={styles.closeButton}
@@ -524,34 +524,50 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
 
-          {/* Progress indicators */}
-          <View style={styles.progressDots}>
-            {CAPTURE_STEPS.map((step, index) => (
-              <View key={step} style={styles.progressDotContainer}>
-                <View
-                  style={[
-                    styles.progressDot,
-                    index < captures.length && styles.progressDotDone,
-                    step === currentStep && styles.progressDotActive,
-                  ]}
-                >
-                  {index < captures.length && (
-                    <Text style={styles.progressCheck}>✓</Text>
+          {/* Compact step indicator pill */}
+          <View style={styles.stepPill}>
+            {CAPTURE_STEPS.map((step, index) => {
+              const isDone = index < captures.length;
+              const isActive = step === currentStep;
+              return (
+                <View key={step} style={styles.stepItem}>
+                  <View
+                    style={[
+                      styles.stepDot,
+                      isDone && styles.stepDotDone,
+                      isActive && styles.stepDotActive,
+                    ]}
+                  >
+                    {isDone ? (
+                      <Text style={styles.stepCheck}>✓</Text>
+                    ) : (
+                      <Text style={[styles.stepNumber, isActive && styles.stepNumberActive]}>
+                        {index + 1}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[
+                    styles.stepLabel,
+                    isActive && styles.stepLabelActive,
+                    isDone && styles.stepLabelDone,
+                  ]}>
+                    {capitalize(step)}
+                  </Text>
+                  {index < CAPTURE_STEPS.length - 1 && (
+                    <View style={[styles.stepConnector, isDone && styles.stepConnectorDone]} />
                   )}
                 </View>
-                <Text style={styles.progressLabel}>
-                  {capitalize(step)}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
 
-          <View style={styles.closeButton} />
+          {/* Spacer to balance close button */}
+          <View style={{ width: 40 }} />
         </View>
 
         {/* Bottom controls */}
         <View style={styles.bottomBar}>
-          {/* Skip button (only after front view) */}
+          {/* Skip/Finish button */}
           <TouchableOpacity
             style={styles.skipButton}
             onPress={skipStep}
@@ -625,12 +641,14 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
+
+  // ---- Top bar ----
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 50,
-    paddingHorizontal: Theme.spacing.lg,
+    paddingTop: 52,
+    paddingHorizontal: Theme.spacing.md,
     position: 'absolute',
     top: 0,
     left: 0,
@@ -638,66 +656,195 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   closeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeText: {
     color: Theme.colors.white,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600' as const,
   },
-  progressDots: {
+
+  // ---- Step indicator pill ----
+  stepPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  progressDotContainer: {
+  stepItem: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  progressDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  stepDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
-  progressDotDone: {
+  stepDotDone: {
     backgroundColor: Theme.colors.success,
     borderColor: Theme.colors.success,
   },
-  progressDotActive: {
+  stepDotActive: {
     borderColor: Theme.colors.primary,
-    borderWidth: 3,
+    borderWidth: 2,
+    backgroundColor: 'rgba(26, 191, 176, 0.2)',
   },
-  progressCheck: {
+  stepCheck: {
     color: Theme.colors.white,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700' as const,
   },
-  progressLabel: {
-    color: Theme.colors.white,
-    fontSize: 10,
-    marginTop: 4,
-    fontWeight: '500' as const,
-    opacity: 0.8,
+  stepNumber: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 11,
+    fontWeight: '600' as const,
   },
+  stepNumberActive: {
+    color: Theme.colors.primary,
+  },
+  stepLabel: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 11,
+    fontWeight: '500' as const,
+    marginLeft: 4,
+    marginRight: 2,
+  },
+  stepLabelActive: {
+    color: Theme.colors.white,
+    fontWeight: '600' as const,
+  },
+  stepLabelDone: {
+    color: Theme.colors.success,
+  },
+  stepConnector: {
+    width: 12,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    marginHorizontal: 4,
+  },
+  stepConnectorDone: {
+    backgroundColor: Theme.colors.success,
+  },
+
+  // ---- Bottom bar ----
   bottomBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: 40,
+    paddingBottom: 36,
     paddingHorizontal: Theme.spacing.xl,
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    zIndex: 10,
+  },
+  skipButton: {
+    width: 70,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  skipText: {
+    color: Theme.colors.white,
+    fontSize: Theme.fontSize.sm,
+    fontWeight: Theme.fontWeight.semibold,
+  },
+  skipTextDisabled: {
+    opacity: 0,
+  },
+  captureButton: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: Theme.colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: Theme.colors.primary,
+  },
+  captureButtonDisabled: {
+    opacity: 0.6,
+  },
+  captureButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Theme.colors.primary,
+  },
+  captureButtonProcessing: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    backgroundColor: Theme.colors.error,
+  },
+  captureCount: {
+    width: 70,
+    alignItems: 'center',
+  },
+  captureCountText: {
+    color: Theme.colors.white,
+    fontSize: Theme.fontSize.lg,
+    fontWeight: Theme.fontWeight.bold,
+  },
+  captureCountLabel: {
+    color: Theme.colors.white,
+    fontSize: Theme.fontSize.xs,
+    opacity: 0.7,
+  },
+
+  // ---- Permission screen ----
+  permissionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Theme.spacing.xl,
+    backgroundColor: Theme.colors.background,
+  },
+  permissionIcon: {
+    fontSize: 64,
+    marginBottom: Theme.spacing.lg,
+  },
+  permissionTitle: {
+    fontSize: Theme.fontSize.xxl,
+    fontWeight: Theme.fontWeight.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.sm,
+    textAlign: 'center',
+  },
+  permissionText: {
+    fontSize: Theme.fontSize.md,
+    color: Theme.colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
+  },
+  primaryButton: {
+    backgroundColor: Theme.colors.primary,
+    paddingVertical: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.xl,
+    borderRadius: Theme.borderRadius.lg,
+    ...Theme.shadows.medium,
+  },
+  primaryButtonText: {
+    color: Theme.colors.white,
+    fontSize: Theme.fontSize.lg,
+    fontWeight: Theme.fontWeight.semibold,
+  },
+});
     zIndex: 10,
   },
   skipButton: {

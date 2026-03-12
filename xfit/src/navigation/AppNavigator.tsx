@@ -1,10 +1,11 @@
 import React from 'react';
-import { Text, ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Colors } from '../constants/colors';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { CustomTabBar } from '../components/CustomTabBar';
 import { RootStackParamList, RootTabParamList } from '../types/navigation';
 import { useAuthStore } from '../stores/authStore';
 
@@ -30,21 +31,8 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 function MainTabs() {
   return (
     <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.tabInactive,
-        tabBarStyle: {
-          backgroundColor: Colors.white,
-          borderTopWidth: 1,
-          borderTopColor: Colors.border,
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 60,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600' as const,
-        },
         headerStyle: {
           backgroundColor: Colors.white,
         },
@@ -59,34 +47,21 @@ function MainTabs() {
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{
-          tabBarIcon: ({ color }) => <TabIcon icon="🏠" color={color} />,
-          headerShown: false,
-        }}
+        options={{ headerShown: false }}
       />
       <Tab.Screen
         name="Scan"
         component={ScanStackNavigator}
-        options={{
-          tabBarIcon: ({ color }) => <TabIcon icon="📸" color={color} />,
-          headerShown: false,
-          tabBarLabel: 'Scan',
-        }}
+        options={{ headerShown: false }}
       />
       <Tab.Screen
         name="Measurements"
         component={MeasurementsScreen}
-        options={{
-          tabBarIcon: ({ color }) => <TabIcon icon="📏" color={color} />,
-          title: 'My Measurements',
-        }}
+        options={{ title: 'My Measurements' }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{
-          tabBarIcon: ({ color }) => <TabIcon icon="👤" color={color} />,
-        }}
       />
     </Tab.Navigator>
   );
@@ -129,6 +104,4 @@ export default function AppNavigator() {
   );
 }
 
-function TabIcon({ icon, color }: { icon: string; color: string }) {
-  return <Text style={{ fontSize: 24, opacity: color === Colors.primary ? 1 : 0.5 }}>{icon}</Text>;
-}
+
