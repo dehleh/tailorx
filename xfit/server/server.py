@@ -761,6 +761,9 @@ def _extract_body_contour_widths(
 
     # Category mask: 0=background, non-zero=person
     mask = seg_result.category_mask.numpy_view().copy()
+    # Ensure mask is 2D (some MediaPipe versions return (h, w, 1))
+    if mask.ndim == 3:
+        mask = mask[:, :, 0]
 
     # Clean up mask with simple morphological operations (pure numpy)
     # Erode then dilate to remove noise  
