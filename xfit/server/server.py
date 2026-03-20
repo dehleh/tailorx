@@ -186,14 +186,73 @@ def get_detector() -> Any:
             base_options=base_options,
             output_segmentation_masks=False,
             num_poses=1,
-            min_pose_detection_confidence=0.5,
-            min_pose_presence_confidence=0.5,
-            min_tracking_confidence=0.5,
+            min_pose_detection_confidence=0.3,
+            min_pose_presence_confidence=0.3,
+            min_tracking_confidence=0.3,
         )
         _detector = vision.PoseLandmarker.create_from_options(options)
         logger.info("MediaPipe Pose Landmarker loaded successfully.")
     
     return _detector
+
+
+# ============================================================
+# IMAGE PREPROCESSING FOR POSE DETECTION
+# ============================================================
+
+MAX_POSE_DIM = 1920  # Cap image to this size before pose detection
+
+def _preprocess_for_pose(pil_image: Image.Image, pad_ratio: float = 0.0) -> tuple[Image.Image, dict]:
+    """
+    Resize large images and optionally add padding for better pose detection.
+    Returns (processed_image, transform_info) where transform_info lets us
+    map normalized landmarks back to the original image coordinates.
+    """
+    w, h = pil_image.size
+    img = pil_image
+
+    # 1. Resize if too large (preserving aspect ratio)
+    scale = 1.0
+    if max(w, h) > MAX_POSE_DIM:
+        scale = MAX_POSE_DIM / max(w, h)
+        new_w, new_h = int(w * scale), int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        w, h = new_w, new_h
+
+    # 2. Add padding (white border) if requested
+    pad_w = pad_h = 0
+    if pad_ratio > 0:
+        pad_w = int(w * pad_ratio)
+        pad_h = int(h * pad_ratio)
+        padded = Image.new("RGB", (w + 2 * pad_w, h + 2 * pad_h), (255, 255, 255))
+        padded.paste(img, (pad_w, pad_h))
+        img = padded
+
+    transform = {
+        "orig_w": pil_image.size[0],
+        "orig_h": pil_image.size[1],
+        "inner_w": w,
+        "inner_h": h,
+        "pad_w": pad_w,
+        "pad_h": pad_h,
+        "padded_w": img.size[0],
+        "padded_h": img.size[1],
+    }
+    return img, transform
+
+
+def _remap_landmark(lm_x: float, lm_y: float, transform: dict) -> tuple[float, float]:
+    """Map normalized landmark coords from padded/resized image back to original image space (normalized 0-1)."""
+    # Convert from padded-image normalized coords to pixel in padded image
+    px = lm_x * transform["padded_w"]
+    py = lm_y * transform["padded_h"]
+    # Subtract padding offset
+    px -= transform["pad_w"]
+    py -= transform["pad_h"]
+    # Normalize relative to inner (resized) image
+    nx = px / transform["inner_w"] if transform["inner_w"] > 0 else 0
+    ny = py / transform["inner_h"] if transform["inner_h"] > 0 else 0
+    return nx, ny
 
 # ============================================================
 # SEGMENTATION MODEL (lazy init)
@@ -267,21 +326,36 @@ async def detect_pose(
         image_bytes = base64.b64decode(request.image)
         pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         image_width, image_height = pil_image.size
+        logger.info(f"Pose request: image {image_width}x{image_height}, type={request.captureType}")
 
         # Run server-side image quality check (non-blocking)
         quality = _analyze_image_quality(np.array(pil_image))
         if not quality["is_acceptable"]:
             logger.warning(f"Image quality issues: {quality['issues']}")
 
-        # Convert to MediaPipe Image
-        np_image = np.array(pil_image)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np_image)
-
-        # Run pose detection
+        # Try pose detection with progressive preprocessing:
+        # 1. Resize only (no padding)
+        # 2. Resize + 15% padding
+        # 3. Resize + 25% padding
         detector = get_detector()
-        result = detector.detect(mp_image)
+        result = None
+        transform = None
 
-        if not result.pose_landmarks or len(result.pose_landmarks) == 0:
+        for pad_ratio in [0.0, 0.15, 0.25]:
+            processed, transform = _preprocess_for_pose(pil_image, pad_ratio=pad_ratio)
+            np_image = np.array(processed)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np_image)
+            det_result = detector.detect(mp_image)
+
+            if det_result.pose_landmarks and len(det_result.pose_landmarks) > 0:
+                result = det_result
+                if pad_ratio > 0:
+                    logger.info(f"Pose detected with {int(pad_ratio*100)}% padding")
+                break
+            else:
+                logger.info(f"No pose with pad_ratio={pad_ratio}, trying next...")
+
+        if result is None or not result.pose_landmarks:
             raise HTTPException(
                 status_code=422,
                 detail="No pose detected in image. Ensure full body is visible with good lighting."
@@ -296,10 +370,13 @@ async def detect_pose(
         for i, lm in enumerate(pose):
             name = LANDMARK_NAMES[i] if i < len(LANDMARK_NAMES) else f"landmark_{i}"
             
+            # Remap from preprocessed image coordinates to original image space
+            norm_x, norm_y = _remap_landmark(lm.x, lm.y, transform)
+            
             if request.returnFormat == "normalized":
-                x, y = lm.x, lm.y
+                x, y = norm_x, norm_y
             else:
-                x, y = lm.x * image_width, lm.y * image_height
+                x, y = norm_x * image_width, norm_y * image_height
             
             visibility = lm.visibility if hasattr(lm, 'visibility') else lm.presence
             total_visibility += visibility
@@ -1257,15 +1334,27 @@ async def detect_pose_refined(
     try:
         image_bytes = base64.b64decode(request.image)
         pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        np_image = np.array(pil_image)
         image_width, image_height = pil_image.size
+        logger.info(f"Refined pose request: image {image_width}x{image_height}")
 
-        # Standard pose detection
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np_image)
+        # Progressive preprocessing: resize + padding retry
         detector = get_detector()
-        result = detector.detect(mp_image)
+        result = None
+        transform = None
 
-        if not result.pose_landmarks or len(result.pose_landmarks) == 0:
+        for pad_ratio in [0.0, 0.15, 0.25]:
+            processed, transform = _preprocess_for_pose(pil_image, pad_ratio=pad_ratio)
+            np_image = np.array(processed)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np_image)
+            det_result = detector.detect(mp_image)
+
+            if det_result.pose_landmarks and len(det_result.pose_landmarks) > 0:
+                result = det_result
+                if pad_ratio > 0:
+                    logger.info(f"Refined: pose detected with {int(pad_ratio*100)}% padding")
+                break
+
+        if result is None or not result.pose_landmarks:
             raise HTTPException(status_code=422, detail="No pose detected.")
 
         pose = result.pose_landmarks[0]
@@ -1276,16 +1365,19 @@ async def detect_pose_refined(
             name = LANDMARK_NAMES[i] if i < len(LANDMARK_NAMES) else f"landmark_{i}"
             visibility = lm.visibility if hasattr(lm, 'visibility') else lm.presence
             total_visibility += visibility
+            # Remap from preprocessed image coordinates to original image space
+            norm_x, norm_y = _remap_landmark(lm.x, lm.y, transform)
             landmarks_raw.append({
-                "x": round(lm.x, 6),
-                "y": round(lm.y, 6),
+                "x": round(norm_x, 6),
+                "y": round(norm_y, 6),
                 "z": round(lm.z, 6),
                 "visibility": round(visibility, 4),
                 "name": name,
             })
 
-        # Apply sub-pixel refinement
-        refined = _refine_landmarks_subpixel(np_image, landmarks_raw)
+        # Apply sub-pixel refinement on the original-resolution image
+        np_original = np.array(pil_image)
+        refined = _refine_landmarks_subpixel(np_original, landmarks_raw)
 
         avg_confidence = total_visibility / len(pose) if len(pose) > 0 else 0
         processing_ms = int((time.time() - start_time) * 1000)
