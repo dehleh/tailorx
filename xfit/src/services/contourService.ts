@@ -10,7 +10,7 @@
  * circumference accuracy from ±5-8cm down to ±2-3cm.
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Landmark } from './measurementEngine';
 
 // ============================================================
@@ -68,7 +68,7 @@ class ContourService {
     try {
       // Read image as base64
       const base64Image = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       // Build landmark data for the server

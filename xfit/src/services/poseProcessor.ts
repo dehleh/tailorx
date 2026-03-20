@@ -12,7 +12,7 @@
  *    proportions when both real detectors are unavailable.
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Landmark, CaptureAngle } from './measurementEngine';
 
 // ============================================================
@@ -294,7 +294,7 @@ class PoseProcessor {
   ): Promise<Omit<PoseProcessingResult, 'processingTimeMs'>> {
     // Read image as base64
     const base64 = await FileSystem.readAsStringAsync(imageUri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: 'base64',
     });
 
     let lastError: Error | null = null;
@@ -307,6 +307,12 @@ class PoseProcessor {
           if (this.cloudConfig.apiKey) {
             headers['Authorization'] = `Bearer ${this.cloudConfig.apiKey}`;
           }
+
+          // AbortSignal.timeout() is not available in Hermes/React Native,
+          // so use AbortController + setTimeout instead.
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), this.cloudConfig.timeout);
+
           const response = await fetch(`${this.cloudConfig.apiUrl}/detect`, {
           method: 'POST',
           headers,
@@ -316,8 +322,10 @@ class PoseProcessor {
             model: 'blazepose_full',
             returnFormat: 'normalized',
           }),
-          signal: AbortSignal.timeout(this.cloudConfig.timeout),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           throw new Error(`Cloud API returned ${response.status}: ${await response.text()}`);

@@ -9,7 +9,7 @@
  * With calibration:    ±1-2cm error
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { REFERENCE_SIZES, CalibrationReference } from './measurementEngine';
 
 // ============================================================
@@ -234,7 +234,7 @@ class ReferenceCalibrationService {
 
     try {
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };

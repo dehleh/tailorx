@@ -6,7 +6,7 @@
  * Includes blur detection and brightness/contrast analysis.
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Image as RNImage } from 'react-native';
 
 // ============================================================
@@ -209,7 +209,7 @@ class ProductionImageValidationService {
 
     try {
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -284,36 +284,70 @@ class ProductionImageValidationService {
   // ============================================================
 
   private async checkFileAccess(imageUri: string): Promise<ValidationCheck> {
+    const success: ValidationCheck = {
+      name: 'File Access',
+      type: 'resolution',
+      passed: true,
+      score: 100,
+      severity: 'critical',
+      message: 'Image file accessible',
+    };
+    const fail = (msg: string): ValidationCheck => ({
+      name: 'File Access',
+      type: 'resolution',
+      passed: false,
+      score: 0,
+      severity: 'critical',
+      message: msg,
+    });
+
+    if (!imageUri || typeof imageUri !== 'string') {
+      return fail('No image URI provided');
+    }
+
+    // Strategy 1: Try getInfoAsync directly
     try {
       const info = await FileSystem.getInfoAsync(imageUri);
-      if (info.exists) {
-        return {
-          name: 'File Access',
-          type: 'resolution',
-          passed: true,
-          score: 100,
-          severity: 'critical',
-          message: 'Image file accessible',
-        };
-      }
-      return {
-        name: 'File Access',
-        type: 'resolution',
-        passed: false,
-        score: 0,
-        severity: 'critical',
-        message: 'Image file not found',
-      };
+      if (info.exists) return success;
     } catch {
-      return {
-        name: 'File Access',
-        type: 'resolution',
-        passed: false,
-        score: 0,
-        severity: 'critical',
-        message: 'Cannot access image file',
-      };
+      // getInfoAsync may throw for content:// or certain cache URIs — try fallbacks
     }
+
+    // Strategy 2: Normalize URI and retry
+    // Some Android devices return paths without file:// prefix, or vice-versa
+    const altUri = imageUri.startsWith('file://')
+      ? imageUri.replace('file://', '')
+      : `file://${imageUri}`;
+    try {
+      const info = await FileSystem.getInfoAsync(altUri);
+      if (info.exists) return success;
+    } catch {
+      // Continue to next strategy
+    }
+
+    // Strategy 3: Try reading a tiny portion of the file
+    // This works even when getInfoAsync fails on certain URI schemes
+    try {
+      await FileSystem.readAsStringAsync(imageUri, {
+        encoding: 'base64',
+        length: 64,
+        position: 0,
+      });
+      return success;
+    } catch {
+      // Continue to next strategy
+    }
+
+    // Strategy 4: Wait briefly and retry — file may still be flushing to disk
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      const info = await FileSystem.getInfoAsync(imageUri);
+      if (info.exists) return success;
+    } catch {
+      // All strategies exhausted
+    }
+
+    return fail('Cannot access image file');
   }
 
   private async getImageMetadata(imageUri: string): Promise<ImageMetadata> {

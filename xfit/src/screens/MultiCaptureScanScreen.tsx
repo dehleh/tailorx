@@ -19,6 +19,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Theme } from '../constants/theme';
 import { CaptureGuide } from '../components/CaptureGuide';
 import { LivePoseFeedback, analyzePose } from '../components/LivePoseFeedback';
@@ -83,15 +84,35 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
     try {
       setIsCapturing(true);
 
-      // 1. Take photo
+      // 1. Take photo (with base64 so we can write to a guaranteed-accessible path)
       const photo = await cameraRef.current.takePictureAsync({
         quality: 1.0,
-        base64: false,
+        base64: true,
         skipProcessing: false,
       });
 
+      if (!photo || (!photo.uri && !photo.base64)) {
+        setIsCapturing(false);
+        Alert.alert(
+          'Capture Failed',
+          'Camera did not return an image. Please try again.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Write to cache directory to guarantee expo-file-system can access the file
+      let imageUri = photo.uri;
+      if (photo.base64) {
+        const cacheUri = `${FileSystem.cacheDirectory}capture_${Date.now()}.jpg`;
+        await FileSystem.writeAsStringAsync(cacheUri, photo.base64, {
+          encoding: 'base64',
+        });
+        imageUri = cacheUri;
+      }
+
       // 2. Validate image
-      const validation = await productionImageValidation.validate(photo.uri);
+      const validation = await productionImageValidation.validate(imageUri);
       
       if (!validation.isValid && !validation.canProceedWithWarnings) {
         setIsCapturing(false);
@@ -128,15 +149,23 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       setProcessingMessage(`Analyzing ${currentStep} view...`);
 
       // Capture 2 additional rapid frames for burst averaging (#1)
-      const burstUris: string[] = [photo.uri];
+      const burstUris: string[] = [imageUri];
       for (let i = 0; i < 2; i++) {
         try {
           const burstPhoto = await cameraRef.current.takePictureAsync({
             quality: 0.9,
-            base64: false,
+            base64: true,
             skipProcessing: true, // faster for burst frames
           });
-          burstUris.push(burstPhoto.uri);
+          if (burstPhoto?.base64) {
+            const burstCacheUri = `${FileSystem.cacheDirectory}burst_${Date.now()}_${i}.jpg`;
+            await FileSystem.writeAsStringAsync(burstCacheUri, burstPhoto.base64, {
+              encoding: 'base64',
+            });
+            burstUris.push(burstCacheUri);
+          } else if (burstPhoto?.uri) {
+            burstUris.push(burstPhoto.uri);
+          }
         } catch {
           // If burst capture fails, continue with what we have
           break;
@@ -146,7 +175,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       // Use burst processing if multiple frames, else single
       const poseResult = burstUris.length > 1
         ? await poseProcessor.processBurst(burstUris, currentStep as 'front' | 'side' | 'back')
-        : await poseProcessor.processImage(photo.uri, currentStep as 'front' | 'side' | 'back');
+        : await poseProcessor.processImage(imageUri, currentStep as 'front' | 'side' | 'back');
 
       if (poseResult.confidence < 0.3) {
         setIsCapturing(false);
@@ -193,7 +222,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
       const newCapture: CapturedAngle = {
         type: currentStep as 'front' | 'side' | 'back',
-        imageUri: photo.uri,
+        imageUri,
         poseResult,
       };
 
@@ -485,25 +514,26 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
   return (
     <View style={styles.container}>
-      <CameraView style={styles.camera} facing="back" ref={cameraRef}>
-        {/* Capture guide overlay */}
-        {currentStep !== 'processing' && currentStep !== 'complete' && (
-          <>
-            <CaptureGuide
-              captureType={currentStep as 'front' | 'side' | 'back'}
-              isReady={!isCapturing}
-            />
-            <LivePoseFeedback
-              landmarks={liveLandmarks}
-              imageWidth={720}
-              imageHeight={1280}
-              captureType={currentStep as 'front' | 'side' | 'back'}
-            />
-          </>
-        )}
+      <CameraView style={styles.camera} facing="back" ref={cameraRef} />
 
-        {/* Top bar — close button + step indicator */}
-        <View style={styles.topBar}>
+      {/* Overlays rendered outside CameraView with absolute positioning */}
+      {currentStep !== 'processing' && currentStep !== 'complete' && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <CaptureGuide
+            captureType={currentStep as 'front' | 'side' | 'back'}
+            isReady={!isCapturing}
+          />
+          <LivePoseFeedback
+            landmarks={liveLandmarks}
+            imageWidth={720}
+            imageHeight={1280}
+            captureType={currentStep as 'front' | 'side' | 'back'}
+          />
+        </View>
+      )}
+
+      {/* Top bar — close button + step indicator */}
+      <View style={[styles.topBar, { position: 'absolute', top: 0, left: 0, right: 0 }]}>
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => {
@@ -563,10 +593,10 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
           {/* Spacer to balance close button */}
           <View style={{ width: 40 }} />
-        </View>
+      </View>
 
-        {/* Bottom controls */}
-        <View style={styles.bottomBar}>
+      {/* Bottom controls */}
+      <View style={[styles.bottomBar, { position: 'absolute', bottom: 0, left: 0, right: 0 }]}>
           {/* Skip/Finish button */}
           <TouchableOpacity
             style={styles.skipButton}
@@ -601,8 +631,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
             </Text>
             <Text style={styles.captureCountLabel}>captured</Text>
           </View>
-        </View>
-      </CameraView>
+      </View>
 
       {/* Processing overlay */}
       <LoadingOverlay
