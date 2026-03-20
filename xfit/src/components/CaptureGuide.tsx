@@ -119,8 +119,8 @@ const GUIDE_CONFIGS = {
 // STYLES
 // ============================================================
 
-const GUIDE_WIDTH = SCREEN_WIDTH * 0.5;
-const GUIDE_HEIGHT = SCREEN_HEIGHT * 0.42;
+const GUIDE_WIDTH = SCREEN_WIDTH * 0.75;
+const GUIDE_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 // Reserve space for the top bar and bottom controls to prevent overlap
 const TOP_RESERVED = 120;  // top bar height
