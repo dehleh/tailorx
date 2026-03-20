@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for MediaPipe
+# Install system dependencies for MediaPipe (OpenGL ES + OpenGL + glib)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
+    libgles2-mesa \
+    libegl1-mesa \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
