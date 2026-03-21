@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
   Share,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useUserStore } from '../stores/userStore';
@@ -21,6 +22,7 @@ export default function MeasurementsScreen({ navigation }: any) {
 
   // State management
   const measurements = useMeasurementStore((state) => state.measurements);
+  const currentMeasurement = useMeasurementStore((state) => state.currentMeasurement);
   const isLoading = useMeasurementStore((state) => state.isLoading);
   const loadMeasurements = useMeasurementStore((state) => state.loadMeasurements);
   const deleteMeasurement = useMeasurementStore((state) => state.deleteMeasurement);
@@ -29,6 +31,13 @@ export default function MeasurementsScreen({ navigation }: any) {
   useEffect(() => {
     loadMeasurements();
   }, []);
+
+  // Reload measurements when the tab is focused (handles returning from scan)
+  useFocusEffect(
+    useCallback(() => {
+      loadMeasurements();
+    }, [loadMeasurements])
+  );
 
   useEffect(() => {
     if (user?.preferredUnit) {
@@ -152,7 +161,7 @@ export default function MeasurementsScreen({ navigation }: any) {
   // ============================================================
 
   const latestMeasurement =
-    useMeasurementStore.getState().currentMeasurement ||
+    currentMeasurement ||
     measurements[measurements.length - 1];
 
   const lastScanDate = latestMeasurement?.date
@@ -161,6 +170,12 @@ export default function MeasurementsScreen({ navigation }: any) {
 
   const measurementData = latestMeasurement.measurements;
   const accuracy = latestMeasurement.accuracy;
+
+  // Debug: log what we're displaying so we can diagnose blank-screen issues
+  if (__DEV__) {
+    console.log('[MeasurementsScreen] latestMeasurement.measurements:', JSON.stringify(measurementData));
+    console.log('[MeasurementsScreen] accuracy:', accuracy?.overallScore);
+  }
 
   const round1 = (n: number) => Math.round(n * 10) / 10;
   const convertToInch = (cm: number) => round1(cm / 2.54);

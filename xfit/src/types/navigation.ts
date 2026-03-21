@@ -20,10 +20,14 @@ export type RootTabParamList = {
 };
 
 export type ScanStackParamList = {
-  ScanHome: undefined;
+  ScanHome: {
+    calibration?: any;
+    knownHeight?: number;
+    anchorMeasurement?: { key: string; valueCm: number };
+  } | undefined;
   Calibration: {
-    onComplete: (calibration: any) => void;
-  };
+    onComplete?: (calibration: any) => void;
+  } | undefined;
   PreparationChecklist: undefined;
   MultiCapture: {
     calibration?: any;

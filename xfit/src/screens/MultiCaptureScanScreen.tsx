@@ -297,10 +297,29 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       const frontCapture = allCaptures.find(c => c.type === 'front');
       const sideCapture = allCaptures.find(c => c.type === 'side');
 
-      // Compute a preliminary scale factor for the contour service
-      const prelimScaleFactor = knownHeight
-        ? knownHeight / (frontCapture?.poseResult?.imageHeight || 1280)
-        : null;
+      // Compute a preliminary scale factor for the contour service.
+      // Use landmark-based person height (head-to-feet) instead of full image
+      // height — the person only occupies a fraction of the frame.
+      let prelimScaleFactor: number | null = null;
+      if (knownHeight && frontCapture) {
+        const lms = frontCapture.poseResult.landmarks;
+        const imgH = frontCapture.poseResult.imageHeight;
+        const nose = lms.find(l => l.name === 'nose');
+        const lShoulder = lms.find(l => l.name === 'left_shoulder');
+        const ankles = lms.filter(l =>
+          l.name === 'left_heel' || l.name === 'right_heel' ||
+          l.name === 'left_foot_index' || l.name === 'right_foot_index' ||
+          l.name === 'left_ankle' || l.name === 'right_ankle'
+        );
+        const topY = nose && lShoulder
+          ? (nose.y - Math.abs(lShoulder.y - nose.y) * 0.6) * imgH
+          : 0;
+        const bottomY = ankles.length > 0
+          ? Math.max(...ankles.map(a => a.y)) * imgH
+          : imgH;
+        const personHeightPx = Math.max(bottomY - topY, imgH * 0.3);
+        prelimScaleFactor = knownHeight / personHeightPx;
+      }
 
       // Extract front and side contours in parallel where possible
       const contourPromises: Promise<void>[] = [];
@@ -381,28 +400,40 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         result.measurements,
         measurements
       );
+
+      // Debug: log pre- and post-smoothing values to diagnose blank measurement display
+      if (__DEV__) {
+        console.log('[ProcessMeasurements] PRE-smooth:', JSON.stringify(result.measurements));
+        console.log('[ProcessMeasurements] POST-smooth:', JSON.stringify(smoothed));
+        console.log('[ProcessMeasurements] overallAccuracy:', result.overallAccuracy);
+      }
+
       result.measurements = smoothed;
 
       // Save measurement
       setProcessingProgress(90);
       setProcessingMessage('Saving results...');
 
+      // Safe accessor: returns 0 for NaN, undefined, negative, or non-finite values
+      const safe = (v: number | undefined): number =>
+        (typeof v === 'number' && isFinite(v) && v > 0) ? Math.round(v * 10) / 10 : 0;
+
       const newMeasurement: BodyMeasurement = {
         id: Date.now().toString(),
         userId: user?.id || 'guest',
         date: new Date(),
         measurements: {
-          height: result.measurements.height || knownHeight || 170,
-          weight: user?.weightKg || 0,
-          chest: result.measurements.chest || 0,
-          waist: result.measurements.waist || 0,
-          hips: result.measurements.hips || 0,
-          shoulders: result.measurements.shoulders || 0,
-          neck: result.measurements.neck || 0,
-          sleeve: result.measurements.sleeve || 0,
-          inseam: result.measurements.inseam || 0,
-          thigh: result.measurements.thigh || 0,
-          calf: result.measurements.calf || 0,
+          height: safe(result.measurements.height) || safe(knownHeight) || 170,
+          weight: safe(user?.weightKg),
+          chest: safe(result.measurements.chest),
+          waist: safe(result.measurements.waist),
+          hips: safe(result.measurements.hips),
+          shoulders: safe(result.measurements.shoulders),
+          neck: safe(result.measurements.neck),
+          sleeve: safe(result.measurements.sleeve),
+          inseam: safe(result.measurements.inseam),
+          thigh: safe(result.measurements.thigh),
+          calf: safe(result.measurements.calf),
         },
         unit: user?.preferredUnit || 'cm',
         images: allCaptures.map(c => c.imageUri),
@@ -419,6 +450,10 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
       await addMeasurement(newMeasurement);
 
+      if (__DEV__) {
+        console.log('[ProcessMeasurements] Saved measurement values:', JSON.stringify(newMeasurement.measurements));
+      }
+
       setProcessingProgress(100);
       setIsProcessing(false);
 
@@ -428,12 +463,12 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         accuracyReport,
       });
       resetScan();
-    } catch (error) {
+    } catch (error: any) {
       setIsProcessing(false);
-      console.error('Processing error:', error);
+      console.error('Processing error:', error?.message || error, error?.stack);
       Alert.alert(
         'Processing Error',
-        'Failed to calculate measurements. Please try again with better conditions.',
+        `Failed to calculate measurements: ${error?.message || 'Unknown error'}.\n\nPlease try again with better conditions.`,
         [{ text: 'OK', onPress: resetScan }]
       );
     }

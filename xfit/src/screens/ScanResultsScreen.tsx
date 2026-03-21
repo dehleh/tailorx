@@ -87,12 +87,16 @@ export default function ScanResultsScreen({
   navigation,
   route,
 }: ScanResultsScreenProps) {
-  const { result, accuracyReport } = route.params;
+  // Guard against missing params (can happen on nav reset or deep link)
+  const result = route?.params?.result;
+  const accuracyReport = route?.params?.accuracyReport;
+
   const authUser = useAuthStore((s) => s.user);
   const addMeasurement = useMeasurementStore((s) => s.addMeasurement);
   const [unit, setUnit] = useState<'cm' | 'inch'>('cm');
   const [shareVisible, setShareVisible] = useState(false);
-  const [saved, setSaved] = useState(false);
+  // Measurement is auto-saved during processing — mark as already saved
+  const [saved, setSaved] = useState(true);
   const measurementId = useMemo(() => generateId(), []);
 
   const formatValue = (cm: number) => {
@@ -100,6 +104,27 @@ export default function ScanResultsScreen({
       ? `${round1(cm)} cm`
       : `${round1(cm / 2.54)} in`;
   };
+
+  // If params are missing, show fallback instead of crashing
+  if (!result || !result.measurements) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background, padding: 20 }}>
+        <Text style={{ fontSize: 48, marginBottom: 16 }}>📐</Text>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.text.primary, marginBottom: 8 }}>
+          No Results Available
+        </Text>
+        <Text style={{ fontSize: 14, color: Colors.text.secondary, textAlign: 'center', marginBottom: 24 }}>
+          Measurement data was not found. Please try scanning again.
+        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('PreparationChecklist')}
+          style={{ backgroundColor: Colors.primary, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 12 }}
+        >
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Start New Scan</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   const measurementGrid = useMemo(() => {
     return Object.entries(result.measurements)

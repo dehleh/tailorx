@@ -62,7 +62,7 @@ export default function PreparationChecklistScreen({ navigation }: any) {
   };
 
   const handleStart = () => {
-    navigation.navigate('ScanHome');
+    navigation.navigate('Calibration');
   };
 
   return (

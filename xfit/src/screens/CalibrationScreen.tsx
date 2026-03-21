@@ -75,16 +75,20 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
     // Save height to profile
     await updateUser({ heightCm });
 
-    if (onComplete) {
-      const calibration = referenceCalibrationService.createHeightCalibration(heightCm, 0);
-      onComplete(calibration);
-    }
-
     Alert.alert(
-      'Calibration Set ✅',
+      'Calibration Set \u2705',
       `Your height (${heightCm}cm) will be used as the calibration reference.\n\n` +
-      'Expected accuracy: ±1-2cm for linear measurements.',
-      [{ text: 'Continue', onPress: () => navigation.goBack() }]
+      'Expected accuracy: \u00b11-2cm for linear measurements.',
+      [{ text: 'Continue to Scan', onPress: () => {
+        if (onComplete) {
+          const calibration = referenceCalibrationService.createHeightCalibration(heightCm, 0);
+          onComplete(calibration);
+        }
+        navigation.navigate('ScanHome', {
+          calibration: referenceCalibrationService.createHeightCalibration(heightCm, 0),
+          knownHeight: heightCm,
+        });
+      }}]
     );
   };
 
@@ -115,7 +119,7 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
       [{
         text: 'Continue to Scan',
         onPress: () => {
-          navigation.navigate('MultiCaptureScan', {
+          navigation.navigate('ScanHome', {
             calibration: user?.heightCm
               ? referenceCalibrationService.createHeightCalibration(user.heightCm, 0)
               : null,
@@ -147,20 +151,11 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
   // ============================================================
 
   const handleSkip = () => {
+    // Calibration is required — prompt user to pick a method
     Alert.alert(
-      'Skip Calibration?',
-      'Without calibration, measurements may have ±3-6cm error instead of ±1-2cm.\n\n' +
-      'You can always set it up later in your Profile.',
-      [
-        { text: 'Go Back', style: 'cancel' },
-        {
-          text: 'Skip',
-          onPress: () => {
-            onComplete?.(null);
-            navigation.goBack();
-          },
-        },
-      ]
+      'Calibration Required',
+      'Entering your height takes just a few seconds and dramatically improves measurement accuracy (±1-2cm vs ±3-6cm).\n\nPlease choose a calibration method to continue.',
+      [{ text: 'OK' }]
     );
   };
 
@@ -237,7 +232,7 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-          <Text style={styles.skipText}>Skip for now</Text>
+          <Text style={styles.skipText}>Why is this required?</Text>
         </TouchableOpacity>
       </ScrollView>
     );

@@ -859,9 +859,17 @@ def _extract_body_contour_widths(
     # Shadow/reflection filtering (#10)
     mask = _filter_shadows_from_mask(np_image, mask)
 
-    # Segmentation confidence: fraction of image that is foreground (expect 15-60%)
+    # Segmentation confidence: fraction of image that is foreground
+    # When the person fills the frame (close-up / guided scan) fg can be 70-95%
+    # which is perfectly valid.  Only very low (<5%) or extreme (>97%) is suspect.
     fg_ratio = float(np.mean(mask > 0))
-    seg_confidence = 1.0 if 0.10 <= fg_ratio <= 0.65 else max(0.3, 1.0 - abs(fg_ratio - 0.35) * 2)
+    if fg_ratio < 0.05 or fg_ratio > 0.97:
+        seg_confidence = 0.3
+    elif 0.10 <= fg_ratio <= 0.65:
+        seg_confidence = 1.0
+    else:
+        # Gradually reduce confidence outside the ideal band, but stay >= 0.5
+        seg_confidence = max(0.5, 1.0 - abs(fg_ratio - 0.40) * 0.8)
 
     # 2. Find silhouette vertical extent
     fg_rows = np.where(np.any(mask > 0, axis=1))[0]

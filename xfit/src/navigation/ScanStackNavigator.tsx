@@ -47,7 +47,7 @@ export default function ScanStackNavigator() {
         component={CalibrationScreen}
         options={{
           title: 'Calibration',
-          presentation: 'modal',
+          presentation: 'card',
         }}
       />
       <Stack.Screen

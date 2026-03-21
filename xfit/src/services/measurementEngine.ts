@@ -301,6 +301,12 @@ class MeasurementEngine {
     // Step 1: Determine pixel-to-cm scale factor
     const scaleFactor = this.computeScaleFactor(captures, calibration, knownHeight, warnings);
 
+    if (__DEV__) {
+      console.log('[MeasEngine] scaleFactor:', scaleFactor, 'captures:', captures.length,
+        'types:', captures.map(c => c.type),
+        'landmarks/capture:', captures.map(c => c.landmarks.length));
+    }
+
     // Step 2: Extract front-view measurements
     const frontCapture = captures.find(c => c.type === 'front');
     const sideCapture = captures.find(c => c.type === 'side');
@@ -328,10 +334,24 @@ class MeasurementEngine {
     // Step 3: Calculate linear measurements from front view
     const frontMeasurements = this.calculateFrontViewMeasurements(rotationCorrectedFront, scaleFactor);
 
+    if (__DEV__) {
+      console.log('[MeasEngine] frontMeasurements:', JSON.stringify({
+        height: frontMeasurements.height,
+        shoulderWidth: frontMeasurements.shoulderWidth,
+        sleeveLength: frontMeasurements.sleeveLength,
+        inseam: frontMeasurements.inseam,
+        frontWidths: frontMeasurements.frontWidths,
+      }));
+    }
+
     // Step 4: Calculate depth from side view (for circumferences)
     const sideMeasurements = rotationCorrectedSide
       ? this.calculateSideViewMeasurements(rotationCorrectedSide, scaleFactor)
       : null;
+
+    if (__DEV__ && sideMeasurements) {
+      console.log('[MeasEngine] sideMeasurements:', JSON.stringify(sideMeasurements));
+    }
 
     // Step 5: Calculate circumferences by combining front + side
     // Prefer contour-based widths over skeleton heuristics when available
@@ -353,9 +373,44 @@ class MeasurementEngine {
       ...circumferences,
     };
 
+    if (__DEV__) {
+      console.log('[MeasEngine] rawMeasurements:', JSON.stringify(rawMeasurements));
+      const nanKeys = Object.entries(rawMeasurements)
+        .filter(([, v]) => !isFinite(v) || v <= 0)
+        .map(([k]) => k);
+      if (nanKeys.length > 0) {
+        console.warn('[MeasEngine] Invalid values detected for:', nanKeys.join(', '));
+      }
+    }
+
+    // Step 6.5: Sanitize — replace NaN/Infinity with 0 before corrections
+    const sanitizedRaw = this.sanitizeMeasurements(rawMeasurements);
+
+    // Step 6.6: Anthropometric fallback — if most measurements are zero/invalid,
+    // use ratio-based estimates from height so the user gets something useful.
+    const zeroCount = Object.values(sanitizedRaw).filter(v => v <= 0).length;
+    const referenceHeight = sanitizedRaw.height > 0
+      ? sanitizedRaw.height
+      : (knownHeight && knownHeight > 0 ? knownHeight : 170);
+    if (zeroCount >= 5) {
+      if (__DEV__) console.warn('[MeasEngine] Too many zero values, applying anthropometric fallback');
+      warnings.push('Measurements could not be fully calculated from poses. Using body-proportion estimates.');
+      const ratios = this.getActiveRatios(gender);
+      if (sanitizedRaw.height <= 0) sanitizedRaw.height = this.round(referenceHeight);
+      if (sanitizedRaw.shoulders <= 0) sanitizedRaw.shoulders = this.round(referenceHeight * ratios.shoulderToHeight);
+      if (sanitizedRaw.sleeve <= 0) sanitizedRaw.sleeve = this.round(referenceHeight * ratios.sleeveToHeight);
+      if (sanitizedRaw.inseam <= 0) sanitizedRaw.inseam = this.round(referenceHeight * ratios.inseamToHeight);
+      if (sanitizedRaw.chest <= 0) sanitizedRaw.chest = this.round(referenceHeight * ratios.chestToHeight);
+      if (sanitizedRaw.waist <= 0) sanitizedRaw.waist = this.round(referenceHeight * ratios.waistToHeight);
+      if (sanitizedRaw.hips <= 0) sanitizedRaw.hips = this.round(referenceHeight * ratios.hipsToHeight);
+      if (sanitizedRaw.neck <= 0) sanitizedRaw.neck = this.round(referenceHeight * ratios.neckToHeight);
+      if (sanitizedRaw.thigh <= 0) sanitizedRaw.thigh = this.round(referenceHeight * ratios.thighToHeight);
+      if (sanitizedRaw.calf <= 0) sanitizedRaw.calf = this.round(referenceHeight * ratios.calfToHeight);
+    }
+
     // Step 7: Apply anthropometric validation & correction
     const corrected = this.applyAnthropometricCorrection(
-      rawMeasurements,
+      sanitizedRaw,
       gender,
       warnings
     );
@@ -400,7 +455,12 @@ class MeasurementEngine {
     );
 
     // Step 9: Calculate overall accuracy
-    const overallAccuracy = this.calculateOverallAccuracy(confidence, captures);
+    // Penalize if measurements are missing/zero (NaN was sanitized to 0)
+    const validMeasurementCount = Object.values(crossValidated).filter(v => v > 0).length;
+    const totalMeasurementCount = Object.keys(crossValidated).length;
+    const overallAccuracy = validMeasurementCount === 0
+      ? 0
+      : this.calculateOverallAccuracy(confidence, captures);
 
     const processingTimeMs = Date.now() - startTime;
 
@@ -465,19 +525,28 @@ class MeasurementEngine {
     // Priority 1: Reference object calibration (most accurate)
     if (calibration) {
       const pixelsPerCm = calibration.pixelWidth / calibration.realWidthCm;
-      return 1 / pixelsPerCm; // cm per pixel
+      const sf = 1 / pixelsPerCm; // cm per pixel
+      if (__DEV__) console.log('[MeasEngine] scaleFactor from calibration:', sf);
+      return isFinite(sf) && sf > 0 ? sf : 1;
     }
 
     // Priority 2: Known height calibration
-    if (knownHeight) {
+    if (knownHeight && knownHeight > 0) {
       const frontCapture = captures.find(c => c.type === 'front');
       if (frontCapture) {
         const headTop = this.getTopOfHead(frontCapture.landmarks);
         const feetBottom = this.getBottomOfFeet(frontCapture.landmarks);
         const heightPixels = Math.abs(feetBottom.y - headTop.y) * frontCapture.imageHeight;
 
-        if (heightPixels > 0) {
-          return knownHeight / heightPixels;
+        if (__DEV__) {
+          console.log('[MeasEngine] headTop.y:', headTop.y, 'feetBottom.y:', feetBottom.y,
+            'imgH:', frontCapture.imageHeight, 'heightPx:', heightPixels, 'knownH:', knownHeight);
+        }
+
+        if (heightPixels > 10) { // require at least 10px person height
+          const sf = knownHeight / heightPixels;
+          if (__DEV__) console.log('[MeasEngine] scaleFactor from knownHeight:', sf);
+          return sf;
         }
       }
     }
@@ -490,9 +559,16 @@ class MeasurementEngine {
       const headTop = this.getTopOfHead(frontCapture.landmarks);
       const feetBottom = this.getBottomOfFeet(frontCapture.landmarks);
       const heightPixels = Math.abs(feetBottom.y - headTop.y) * frontCapture.imageHeight;
-      return 170 / heightPixels;
+      if (__DEV__) {
+        console.log('[MeasEngine] scaleFactor fallback: headTop.y:', headTop.y,
+          'feetBottom.y:', feetBottom.y, 'heightPx:', heightPixels);
+      }
+      if (heightPixels > 10) {
+        return 170 / heightPixels;
+      }
     }
 
+    if (__DEV__) console.warn('[MeasEngine] scaleFactor: using emergency fallback=1');
     return 1; // fallback (practically useless)
   }
 
@@ -507,6 +583,20 @@ class MeasurementEngine {
     const lm = capture.landmarks;
     const imgH = capture.imageHeight;
     const imgW = capture.imageWidth;
+
+    if (__DEV__) {
+      console.log('[MeasEngine] frontView: imgW:', imgW, 'imgH:', imgH,
+        'landmarkCount:', lm.length, 'scaleFactor:', scaleFactor);
+      // Log a few key landmarks for diagnosis
+      const nose = lm.find(l => l.name === 'nose');
+      const lSh = lm.find(l => l.name === 'left_shoulder');
+      const lAnk = lm.find(l => l.name === 'left_ankle');
+      const lHeel = lm.find(l => l.name === 'left_heel');
+      console.log('[MeasEngine] keyLandmarks: nose=', nose?.y?.toFixed(4),
+        'lShoulder=', lSh?.y?.toFixed(4),
+        'lAnkle=', lAnk?.y?.toFixed(4),
+        'lHeel=', lHeel?.y?.toFixed(4));
+    }
 
     // Helper to get pixel coordinates
     const px = (landmark: Landmark) => ({
@@ -550,8 +640,9 @@ class MeasurementEngine {
     const height = this.round(heightPixels * scaleFactor);
 
     // SHOULDER WIDTH: bi-deltoid width (outer edge of shoulders)
-    // Add ~5% to shoulder landmark distance (landmarks are on joint, not outer edge)
-    const shoulderPixels = this.distance2D(px(leftShoulder), px(rightShoulder)) * 1.05;
+    // BlazePose landmarks sit on the acromial joint. Actual clothing bi-deltoid
+    // width adds ~3-4cm of deltoid muscle on each side → ~12% wider.
+    const shoulderPixels = this.distance2D(px(leftShoulder), px(rightShoulder)) * 1.12;
     const shoulderWidth = this.round(shoulderPixels * scaleFactor);
 
     // SLEEVE LENGTH: shoulder to wrist (following arm segments)
@@ -634,27 +725,68 @@ class MeasurementEngine {
     const rightHip = this.findLandmark(lm, 'right_hip', BLAZEPOSE_LANDMARKS.RIGHT_HIP);
     const leftKnee = this.findLandmark(lm, 'left_knee', BLAZEPOSE_LANDMARKS.LEFT_KNEE);
     const rightKnee = this.findLandmark(lm, 'right_knee', BLAZEPOSE_LANDMARKS.RIGHT_KNEE);
+    const nose = this.findLandmark(lm, 'nose', BLAZEPOSE_LANDMARKS.NOSE);
 
-    // Side-view depth: horizontal distance between front and back of body
-    // In side view, the shoulder-to-shoulder distance represents depth
-    const chestDepth = this.distance2D(px(leftShoulder), px(rightShoulder));
-    const waistDepth = this.distance2D(px(leftHip), px(rightHip));
-    const hipDepth = waistDepth * 1.15; // hips usually deeper than waist
+    // In side view, the LEFT/RIGHT landmark pairs overlap at similar x-positions.
+    // The actual body depth is the *horizontal extent* of the torso in the image.
+    // We estimate depth from: (a) z-coordinate differences if meaningful, or
+    // (b) the horizontal span of the visible torso landmarks, or
+    // (c) anthropometric depth/width ratios as final fallback.
 
-    // Thigh depth from side (average of visible landmarks)
-    const thighDepth = this.distance2D(
-      { x: px(leftHip).x, y: (px(leftHip).y + px(leftKnee).y) / 2 },
-      { x: px(rightHip).x, y: (px(rightHip).y + px(rightKnee).y) / 2 }
-    );
+    // Strategy A: Use the horizontal span between the most-front and most-back
+    // torso landmarks visible in the side view (shoulder, hip, nose).
+    const torsoLandmarks = [leftShoulder, rightShoulder, leftHip, rightHip, nose]
+      .filter(l => l.visibility > 0.3);
+    const xCoords = torsoLandmarks.map(l => l.x * imgW);
+    const torsoSpanPx = xCoords.length >= 2
+      ? Math.max(...xCoords) - Math.min(...xCoords)
+      : 0;
+
+    // Strategy B: Z-depth difference scaled by person size
+    const shoulderZSpan = Math.abs(leftShoulder.z - rightShoulder.z) * imgW;
+    const hipZSpan = Math.abs(leftHip.z - rightHip.z) * imgW;
+
+    // Pick the most reliable estimate
+    // The torso span in the side-view image directly represents anterior-posterior depth
+    const rawChestDepth = Math.max(torsoSpanPx * 0.85, shoulderZSpan);
+
+    // If the torso span is too small (< 5% of image), the side view detection
+    // might not be giving us useful depth info — use front-width-based ratios
+    const useDepthFromSide = rawChestDepth > imgW * 0.05;
+
+    if (useDepthFromSide) {
+      const chestDepth = rawChestDepth * scaleFactor;
+      const waistDepth = chestDepth * 0.85;
+      const hipDepth = chestDepth * 0.95;
+      const neckDepth = chestDepth * 0.4;
+      const thighDepth = chestDepth * 0.55;
+      const calfDepth = chestDepth * 0.35;
+
+      return {
+        sideDepths: {
+          chest: chestDepth,
+          waist: waistDepth,
+          hips: hipDepth,
+          thigh: thighDepth,
+          calf: calfDepth,
+          neck: neckDepth,
+        },
+      };
+    }
+
+    // Fallback: estimate depth from front shoulder width using anthropometric ratios
+    // Typical chest depth ≈ 70-80% of chest width (front)
+    const frontShoulderSpan = this.distance2D(px(leftShoulder), px(rightShoulder));
+    const estimatedChestDepth = frontShoulderSpan * 0.75 * scaleFactor;
 
     return {
       sideDepths: {
-        chest: chestDepth * scaleFactor,
-        waist: waistDepth * scaleFactor,
-        hips: hipDepth * scaleFactor,
-        thigh: thighDepth * scaleFactor,
-        calf: thighDepth * scaleFactor * 0.55,
-        neck: chestDepth * scaleFactor * 0.3,
+        chest: estimatedChestDepth,
+        waist: estimatedChestDepth * 0.85,
+        hips: estimatedChestDepth * 0.95,
+        thigh: estimatedChestDepth * 0.55,
+        calf: estimatedChestDepth * 0.35,
+        neck: estimatedChestDepth * 0.4,
       },
     };
   }
@@ -686,6 +818,14 @@ class MeasurementEngine {
     // ------------------------------------------------------------------
     const fc = contourData?.front;
     const sc = contourData?.side;
+
+    if (__DEV__) {
+      console.log('[MeasEngine] circumferences: fc?', !!fc,
+        'fc.segConf:', fc?.segmentationConfidence,
+        'sc?', !!sc, 'sc.segConf:', sc?.segmentationConfidence,
+        'sideMeasurements?', !!sideMeasurements);
+      console.log('[MeasEngine] frontWidths:', JSON.stringify(frontWidths));
+    }
 
     if (fc && fc.segmentationConfidence > 0.4) {
       const contourFrontWidths = this.contourWidthsToCm(fc, scaleFactor);
@@ -782,6 +922,10 @@ class MeasurementEngine {
 
   /**
    * Convert contour widths from segmentation result to cm values.
+   * Always uses width_px × engine scale factor (which is correctly derived
+   * from landmark-based height). The server-provided width_cm uses a
+   * preliminary scale factor that divides by full image height instead of
+   * person height — making it ~25-30% too small — so we ignore it.
    */
   private contourWidthsToCm(
     contour: ContourWidths,
@@ -789,9 +933,7 @@ class MeasurementEngine {
   ): Record<string, number> {
     const result: Record<string, number> = {};
     for (const [part, data] of Object.entries(contour.widths)) {
-      if (data.width_cm && data.width_cm > 0) {
-        result[part] = data.width_cm;
-      } else if (data.width_px > 0) {
+      if (data.width_px > 0) {
         result[part] = data.width_px * scaleFactor;
       }
     }
@@ -814,8 +956,11 @@ class MeasurementEngine {
    * Where a and b are semi-axes
    */
   private ellipseCircumference(a: number, b: number): number {
-    const h = ((a - b) * (a - b)) / ((a + b) * (a + b));
-    const circumference = Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+    if (!isFinite(a) || !isFinite(b) || a <= 0 || b <= 0) return 0;
+    const sum = a + b;
+    if (sum === 0) return 0;
+    const h = ((a - b) * (a - b)) / (sum * sum);
+    const circumference = Math.PI * sum * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
     return this.round(circumference);
   }
 
@@ -962,7 +1107,11 @@ class MeasurementEngine {
       }
 
       // Anthropometric plausibility (measurements close to expected are more trustworthy)
-      if (config.ratioKey && measurements[config.key] > 0) {
+      const measValue = measurements[config.key];
+      if (!isFinite(measValue) || measValue <= 0) {
+        // Missing or invalid measurement → low confidence
+        logOdds -= 2.0;
+      } else if (config.ratioKey && measValue > 0) {
         const expectedRatio = ratios[config.ratioKey] as number;
         const actualRatio = measurements[config.key] / height;
         const stdDev = RATIO_STDDEV[config.ratioKey as keyof typeof RATIO_STDDEV] || 0.03;
@@ -991,7 +1140,9 @@ class MeasurementEngine {
     const avgConfidence =
       captures.reduce((sum, c) => sum + c.confidence, 0) / captures.length;
 
-    return Math.round(avgConfidence * 100 * 0.7); // 70% weight from landmark confidence
+    // High-quality captures (0.9+) deserve a strong base; 0.85 weight keeps the
+    // Bayesian posterior from starting too low.
+    return Math.round(avgConfidence * 100 * 0.85);
   }
 
   private calculateOverallAccuracy(
@@ -1001,15 +1152,14 @@ class MeasurementEngine {
     const values = Object.values(confidence);
     if (values.length === 0) return 0;
 
-    // Weighted average (penalize low-confidence measurements more)
-    const weightedSum = values.reduce((sum, c) => sum + c * c, 0);
-    const weightSum = values.reduce((sum, c) => sum + c, 0);
-    const weightedAvg = weightedSum / weightSum;
+    // Arithmetic mean of per-measurement confidence — the Bayesian model already
+    // accounts for data quality, so a simple average gives an honest overall score.
+    const mean = values.reduce((sum, c) => sum + c, 0) / values.length;
 
-    // Bonus for more capture angles
-    const angleBonus = Math.min(5, (captures.length - 1) * 3);
+    // Bonus for multi-angle capture (more data = less ambiguity)
+    const angleBonus = Math.min(8, (captures.length - 1) * 4);
 
-    return Math.min(98, Math.round(weightedAvg + angleBonus));
+    return Math.min(98, Math.round(mean + angleBonus));
   }
 
   // ============================================================
@@ -1079,8 +1229,20 @@ class MeasurementEngine {
   }
 
   private round(value: number, decimals: number = 1): number {
+    if (!isFinite(value)) return 0;
     const factor = Math.pow(10, decimals);
     return Math.round(value * factor) / factor;
+  }
+
+  /**
+   * Sanitize a measurements record: replace NaN/Infinity/negative with 0.
+   */
+  private sanitizeMeasurements(m: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = {};
+    for (const [k, v] of Object.entries(m)) {
+      result[k] = (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0;
+    }
+    return result;
   }
 
   // ============================================================
@@ -1272,14 +1434,15 @@ class MeasurementEngine {
       m.calf = this.round(m.thigh * 0.65);
     }
 
-    // Rule 5: Shoulder width should be reasonable relative to chest
-    if (m.shoulders > 0 && m.chest > 0) {
-      // Shoulder width ≈ chest_circumference / π  (rough diameter)
-      const expectedShoulder = m.chest / Math.PI;
-      if (m.shoulders > expectedShoulder * 1.4 || m.shoulders < expectedShoulder * 0.6) {
-        warnings.push('Shoulder width inconsistent with chest — adjusting.');
+    // Rule 5: Shoulder width should be reasonable relative to height
+    // Bi-deltoid width is typically 24-26% of height
+    if (m.shoulders > 0 && m.height > 0) {
+      const ratios = this.getActiveRatios(gender);
+      const expectedShoulder = m.height * ratios.shoulderToHeight;
+      if (m.shoulders > expectedShoulder * 1.35 || m.shoulders < expectedShoulder * 0.7) {
+        warnings.push('Shoulder width outside expected range — adjusting.');
         m.shoulders = this.round(
-          m.shoulders * 0.6 + expectedShoulder * 0.4
+          m.shoulders * 0.5 + expectedShoulder * 0.5
         );
       }
     }
