@@ -298,15 +298,6 @@ class MeasurementEngine {
     const startTime = Date.now();
     const warnings: string[] = [];
 
-    // Step 1: Determine pixel-to-cm scale factor
-    const scaleFactor = this.computeScaleFactor(captures, calibration, knownHeight, warnings);
-
-    if (__DEV__) {
-      console.log('[MeasEngine] scaleFactor:', scaleFactor, 'captures:', captures.length,
-        'types:', captures.map(c => c.type),
-        'landmarks/capture:', captures.map(c => c.landmarks.length));
-    }
-
     // Step 2: Extract front-view measurements
     const frontCapture = captures.find(c => c.type === 'front');
     const sideCapture = captures.find(c => c.type === 'side');
@@ -331,8 +322,30 @@ class MeasurementEngine {
       : null;
     const rotationApplied = Math.abs(frontRotation) > 0.5;
 
+    // Step 1: Determine pixel-to-cm scale factor.
+    // IMPORTANT: use the CORRECTED front capture (same landmarks that will be used
+    // for all measurements) so that both scale computation and measurement use
+    // identical y-coordinates. Using the original captures caused a ~3x inflation
+    // on high-resolution (3048×4064) portrait phone images.
+    const correctedCapturesForScale: CaptureAngle[] = [
+      rotationCorrectedFront,
+      ...(rotationCorrectedSide ? [rotationCorrectedSide] : []),
+      ...(correctedBack ? [correctedBack] : []),
+    ];
+    const scaleFactor = this.computeScaleFactor(
+      correctedCapturesForScale, calibration, knownHeight, warnings
+    );
+
+    if (__DEV__) {
+      console.log('[MeasEngine] scaleFactor:', scaleFactor, 'captures:', captures.length,
+        'types:', captures.map(c => c.type),
+        'landmarks/capture:', captures.map(c => c.landmarks.length));
+    }
+
     // Step 3: Calculate linear measurements from front view
-    const frontMeasurements = this.calculateFrontViewMeasurements(rotationCorrectedFront, scaleFactor);
+    const frontMeasurements = this.calculateFrontViewMeasurements(
+      rotationCorrectedFront, scaleFactor, knownHeight
+    );
 
     if (__DEV__) {
       console.log('[MeasEngine] frontMeasurements:', JSON.stringify({
@@ -578,7 +591,8 @@ class MeasurementEngine {
 
   private calculateFrontViewMeasurements(
     capture: CaptureAngle,
-    scaleFactor: number
+    scaleFactor: number,
+    knownHeight?: number | null
   ) {
     const lm = capture.landmarks;
     const imgH = capture.imageHeight;
@@ -586,7 +600,7 @@ class MeasurementEngine {
 
     if (__DEV__) {
       console.log('[MeasEngine] frontView: imgW:', imgW, 'imgH:', imgH,
-        'landmarkCount:', lm.length, 'scaleFactor:', scaleFactor);
+        'landmarkCount:', lm.length, 'scaleFactor:', scaleFactor, 'knownHeight:', knownHeight);
       // Log a few key landmarks for diagnosis
       const nose = lm.find(l => l.name === 'nose');
       const lSh = lm.find(l => l.name === 'left_shoulder');
@@ -619,8 +633,13 @@ class MeasurementEngine {
     const rightElbow = this.findLandmark(lm, 'right_elbow', BLAZEPOSE_LANDMARKS.RIGHT_ELBOW);
     const nose = this.findLandmark(lm, 'nose', BLAZEPOSE_LANDMARKS.NOSE);
 
-    // Head top estimation: ~15% above nose (head crown not directly detected)
-    const headTopY = nose.y - (this.distance2D(px(nose), px(leftShoulder)) * 0.6) / imgH;
+    // Head top estimation: ~60% of nose-to-shoulder Y-distance above nose.
+    // IMPORTANT: use Y-only distance (not Euclidean). On a portrait 3048×4064
+    // phone image the Euclidean formula includes imgW in its calculation,
+    // producing a headTopY that is ~10% too low and inflates the measured height
+    // by 3-4× when the scale factor was derived from the Y-only formula.
+    const noseToShoulderY = Math.abs(leftShoulder.y - nose.y);
+    const headTopY = nose.y - noseToShoulderY * 0.6;
 
     // Feet bottom: use ankles (or heels if available)
     const leftHeel = lm.find(l => l.name === 'left_heel') || leftAnkle;
@@ -635,9 +654,18 @@ class MeasurementEngine {
       rightFootIndex.y
     );
 
-    // HEIGHT: top of head to bottom of feet
+    // HEIGHT: top of head to bottom of feet.
+    // When the user provided their known height, use it directly — it's more
+    // accurate than the pixel-based estimate and removes any rounding errors.
     const heightPixels = (feetBottomY - headTopY) * imgH;
-    const height = this.round(heightPixels * scaleFactor);
+    const measuredHeight = this.round(heightPixels * scaleFactor);
+    const height = (knownHeight && knownHeight > 0) ? knownHeight : measuredHeight;
+
+    if (__DEV__) {
+      console.log('[MeasEngine] headTopY:', headTopY.toFixed(4),
+        'feetBottomY:', feetBottomY.toFixed(4), 'heightPx:', heightPixels.toFixed(1),
+        'measuredH:', measuredHeight, 'finalH:', height);
+    }
 
     // SHOULDER WIDTH: bi-deltoid width (outer edge of shoulders)
     // BlazePose landmarks sit on the acromial joint. Actual clothing bi-deltoid
@@ -931,10 +959,21 @@ class MeasurementEngine {
     contour: ContourWidths,
     scaleFactor: number
   ): Record<string, number> {
+    // Maximum plausible body widths in cm (safety cap to prevent runaway values
+    // if scaleFactor is still slightly off or segmentation bleeds into background)
+    const MAX_WIDTH_CM: Record<string, number> = {
+      chest: 80, waist: 80, hips: 80, neck: 30, thigh: 50, calf: 35,
+    };
     const result: Record<string, number> = {};
     for (const [part, data] of Object.entries(contour.widths)) {
       if (data.width_px > 0) {
-        result[part] = data.width_px * scaleFactor;
+        const widthCm = data.width_px * scaleFactor;
+        const cap = MAX_WIDTH_CM[part] ?? 100;
+        result[part] = Math.min(widthCm, cap);
+        if (__DEV__ && widthCm > cap) {
+          console.warn('[MeasEngine] contour width capped for', part,
+            ':', widthCm.toFixed(1), '→', cap, 'cm (width_px:', data.width_px, 'sf:', scaleFactor.toFixed(5), ')');
+        }
       }
     }
     return result;
