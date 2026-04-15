@@ -14,6 +14,13 @@ export interface BodyMeasurement {
     inseam: number;
     thigh: number;
     calf: number;
+    // Female-specific garment measurements
+    underbust?: number;         // Round under bust circumference
+    halfLength?: number;        // Shoulder to waist length
+    topLength?: number;         // Shoulder to hip length (full top length)
+    // Arm circumferences (all genders, useful for shirt/blouse fitting)
+    roundSleeveBicep?: number;  // Upper arm circumference at bicep
+    roundSleeveElbow?: number;  // Circumference at elbow
   };
   unit: 'cm' | 'inch';
   images?: string[];

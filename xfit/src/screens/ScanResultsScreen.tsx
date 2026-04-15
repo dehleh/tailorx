@@ -22,6 +22,8 @@ import { MeasurementResult } from '../services/measurementEngine';
 import { AccuracyReport } from '../services/accuracyEngine';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
+import { useUserStore } from '../stores/userStore';
+import { lookupSize, SizeLookupResult } from '../services/sizeChartService';
 import { generateId } from '../utils/helpers';
 import ShareModal from '../components/ShareModal';
 
@@ -43,17 +45,27 @@ const MEASUREMENT_META: Record<
   string,
   { icon: string; label: string; isWeight?: boolean }
 > = {
-  chest: { icon: '👔', label: 'Chest' },
-  waist: { icon: '👖', label: 'Waist' },
-  hips: { icon: '🩳', label: 'Hips' },
+  // Universal
+  height: { icon: '📏', label: 'Height' },
+  weight: { icon: '⚖️', label: 'Weight', isWeight: true },
   shoulders: { icon: '👕', label: 'Shoulders' },
   neck: { icon: '👔', label: 'Neck' },
-  height: { icon: '📏', label: 'Height' },
   sleeve: { icon: '🧥', label: 'Sleeve' },
+  waist: { icon: '👖', label: 'Waist' },
+  hips: { icon: '🩳', label: 'Hips' },
+  // Chest / Bust (same field, labelled universally as Chest)
+  chest: { icon: '👔', label: 'Chest / Bust' },
+  // Female-specific
+  underbust: { icon: '👙', label: 'Under Bust' },
+  halfLength: { icon: '📐', label: 'Half Length' },
+  topLength: { icon: '📏', label: 'Top Length' },
+  // Arm (all genders)
+  roundSleeveBicep: { icon: '💪', label: 'Bicep' },
+  roundSleeveElbow: { icon: '🦾', label: 'Elbow' },
+  // Male lower-body
   inseam: { icon: '👖', label: 'Inseam' },
   thigh: { icon: '🦵', label: 'Thigh' },
   calf: { icon: '👟', label: 'Calf' },
-  weight: { icon: '⚖️', label: 'Weight', isWeight: true },
 };
 
 // ============================================================
@@ -92,9 +104,11 @@ export default function ScanResultsScreen({
   const accuracyReport = route?.params?.accuracyReport;
 
   const authUser = useAuthStore((s) => s.user);
+  const userProfile = useUserStore((s) => s.user);
   const addMeasurement = useMeasurementStore((s) => s.addMeasurement);
   const [unit, setUnit] = useState<'cm' | 'inch'>('cm');
   const [shareVisible, setShareVisible] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   // Measurement is auto-saved during processing — mark as already saved
   const [saved, setSaved] = useState(true);
   const measurementId = useMemo(() => generateId(), []);
@@ -134,6 +148,12 @@ export default function ScanResultsScreen({
         return { key, label: meta.label, icon: meta.icon, value, isWeight: meta.isWeight };
       });
   }, [result]);
+
+  const sizeResult: SizeLookupResult | null = useMemo(() => {
+    const gender = (userProfile?.gender as 'male' | 'female' | 'other') || 'other';
+    if (!result.measurements || Object.keys(result.measurements).length === 0) return null;
+    return lookupSize(result.measurements, gender);
+  }, [result, userProfile]);
 
   const handleSave = async () => {
     if (saved) return;
@@ -212,6 +232,39 @@ export default function ScanResultsScreen({
           </View>
         </View>
 
+        {/* Size Recommendation */}
+        {sizeResult && (
+          <View style={styles.sizeCard}>
+            <Text style={styles.sizeCardTitle}>👕 Recommended Size</Text>
+            <View style={styles.sizeBadgeRow}>
+              <View style={styles.sizeBadge}>
+                <Text style={styles.sizeBadgeText}>{sizeResult.recommendedSize}</Text>
+              </View>
+              <Text style={styles.sizeStandard}>ISO 8559-1</Text>
+            </View>
+            {Object.keys(sizeResult.perMeasurement).length > 0 && (
+              <View style={styles.sizeBreakdown}>
+                {Object.entries(sizeResult.perMeasurement).map(([key, size]) => (
+                  <View key={key} style={styles.sizeBreakdownRow}>
+                    <Text style={styles.sizeBreakdownLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+                    <Text style={[
+                      styles.sizeBreakdownValue,
+                      size !== sizeResult.recommendedSize && styles.sizeBreakdownMismatch,
+                    ]}>{size}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {sizeResult.notes.length > 0 && (
+              <View style={styles.sizeNotes}>
+                {sizeResult.notes.map((note, i) => (
+                  <Text key={i} style={styles.sizeNoteText}>💡 {note}</Text>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Actions */}
         <View style={styles.actions}>
           <TouchableOpacity
@@ -236,6 +289,61 @@ export default function ScanResultsScreen({
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Scan Details (always visible in production — tap to expand) */}
+        <TouchableOpacity
+          style={styles.detailsHeader}
+          onPress={() => setDetailsExpanded(v => !v)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.detailsHeaderText}>🔍 Scan Details</Text>
+          <Text style={styles.detailsChevron}>{detailsExpanded ? '▲' : '▼'}</Text>
+        </TouchableOpacity>
+
+        {detailsExpanded && (
+          <View style={styles.detailsBody}>
+            {/* Processing metadata */}
+            <Text style={styles.detailsRow}>
+              <Text style={styles.detailsKey}>Angles: </Text>
+              {result.metadata.anglesUsed.join(', ')}
+            </Text>
+            <Text style={styles.detailsRow}>
+              <Text style={styles.detailsKey}>Calibration: </Text>
+              {result.metadata.calibrationMethod}
+            </Text>
+            <Text style={styles.detailsRow}>
+              <Text style={styles.detailsKey}>Contour: </Text>
+              {result.metadata.contourUsed ? 'Yes ✔' : 'No (skeleton only)'}
+            </Text>
+            <Text style={styles.detailsRow}>
+              <Text style={styles.detailsKey}>Processing: </Text>
+              {result.metadata.processingTimeMs}ms
+            </Text>
+            <Text style={styles.detailsRow}>
+              <Text style={styles.detailsKey}>Engine: </Text>
+              {result.metadata.engineVersion}
+            </Text>
+
+            {/* Warnings */}
+            {result.warnings.length > 0 && (
+              <View style={styles.detailsWarningBox}>
+                <Text style={styles.detailsWarningTitle}>⚠ Warnings</Text>
+                {result.warnings.map((w, i) => (
+                  <Text key={i} style={styles.detailsWarningText}>• {w}</Text>
+                ))}
+              </View>
+            )}
+
+            {/* Per-measurement confidence */}
+            <Text style={[styles.detailsKey, { marginTop: 10, marginBottom: 4 }]}>Confidence per measurement:</Text>
+            {Object.entries(result.confidence).map(([k, v]) => (
+              <Text key={k} style={styles.detailsRow}>
+                <Text style={styles.detailsKey}>{k}: </Text>
+                {v}%
+              </Text>
+            ))}
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -392,6 +500,68 @@ const styles = StyleSheet.create({
   actions: {
     paddingHorizontal: 20,
   },
+  detailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border || '#E5E7EB',
+  },
+  detailsHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  detailsChevron: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+  },
+  detailsBody: {
+    marginHorizontal: 20,
+    marginTop: 2,
+    padding: 14,
+    backgroundColor: Colors.surface,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: Colors.border || '#E5E7EB',
+  },
+  detailsRow: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 3,
+  },
+  detailsKey: {
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  detailsWarningBox: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginBottom: 4,
+  },
+  detailsWarningTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  detailsWarningText: {
+    fontSize: 12,
+    color: '#78350F',
+    marginBottom: 2,
+  },
   saveButton: {
     backgroundColor: Colors.primary,
     paddingVertical: 16,
@@ -424,5 +594,76 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Size recommendation card
+  sizeCard: {
+    backgroundColor: Colors.surface,
+    marginHorizontal: 20,
+    marginBottom: 24,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sizeCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 12,
+  },
+  sizeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sizeBadge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  sizeBadgeText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  sizeStandard: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+  },
+  sizeBreakdown: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 10,
+  },
+  sizeBreakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  sizeBreakdownLabel: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+  },
+  sizeBreakdownValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  sizeBreakdownMismatch: {
+    color: '#F59E0B',
+  },
+  sizeNotes: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+  },
+  sizeNoteText: {
+    fontSize: 12,
+    color: '#1E40AF',
+    lineHeight: 18,
+    marginBottom: 2,
   },
 });

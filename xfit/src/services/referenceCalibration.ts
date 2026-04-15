@@ -227,7 +227,7 @@ class ReferenceCalibrationService {
     pixelWidth: number;
     pixelHeight: number;
   }> {
-    const apiUrl = process.env.EXPO_PUBLIC_POSE_API_URL || 'http://localhost:8000/v1/pose';
+    const apiUrl = process.env.EXPO_PUBLIC_POSE_API_URL || 'https://tailorx-pose-api-production.up.railway.app/v1/pose';
     const apiKey = process.env.EXPO_PUBLIC_POSE_API_KEY || '';
     const baseUrl = apiUrl.replace(/\/pose\/?.*$/, '');
     const detectUrl = `${baseUrl}/image/detect-reference`;

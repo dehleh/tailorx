@@ -123,65 +123,87 @@ export const BLAZEPOSE_LANDMARKS = {
   RIGHT_FOOT_INDEX: 32,
 } as const;
 
-// Anthropometric ratio data (from ISO 8559 & large-scale studies)
-// These are population means used for validation and correction
+// Anthropometric ratio data (from ISO 8559-1:2017 & international studies)
+// Ratios derived from Medium (M) size — population mean reference point
 const ANTHROPOMETRIC_RATIOS = {
   male: {
-    chestToHeight: 0.52,       // Chest circumference / height
-    waistToHeight: 0.44,       // Waist circumference / height
-    hipsToHeight: 0.53,        // Hip circumference / height
-    shoulderToHeight: 0.259,   // Bi-shoulder width / height
-    neckToHeight: 0.215,       // Neck circumference / height
-    sleeveToHeight: 0.365,     // Sleeve length / height
-    inseamToHeight: 0.45,      // Inseam / height
-    thighToHeight: 0.33,       // Thigh circumference / height
-    calfToHeight: 0.21,        // Calf circumference / height
-    armLengthToHeight: 0.44,   // Full arm length / height
-    torsoToHeight: 0.3,        // Shoulder to hip / height
-    headToHeight: 0.13,        // Head height / height
+    // ISO 8559 Male M: height=174, chest=96, waist=82, hips=96
+    chestToHeight: 0.552,       // Chest circumference / height (96/174)
+    waistToHeight: 0.471,       // Waist circumference / height (82/174)
+    hipsToHeight: 0.552,        // Hip circumference / height (96/174)
+    shoulderToHeight: 0.259,    // Bi-shoulder width / height (45/174)
+    neckToHeight: 0.218,        // Neck circumference / height (38/174)
+    sleeveToHeight: 0.356,      // Sleeve length / height (62/174)
+    inseamToHeight: 0.466,      // Inseam / height (81/174)
+    thighToHeight: 0.345,       // Thigh circumference / height (60/174)
+    calfToHeight: 0.224,        // Calf circumference / height (39/174)
+    armLengthToHeight: 0.44,    // Full arm length / height
+    torsoToHeight: 0.3,         // Shoulder to hip / height
+    headToHeight: 0.13,         // Head height / height
+    underbustToHeight: 0.52,    // Male: underbust ≈ chest (no bust tissue)
+    halfLengthToHeight: 0.18,   // Shoulder to waist
+    topLengthToHeight: 0.25,    // Shoulder to hip
+    bicepToHeight: 0.195,       // Upper arm circumference / height (34/174)
+    elbowToHeight: 0.16,        // Elbow circumference / height (~28/174)
   },
   female: {
-    chestToHeight: 0.51,
-    waistToHeight: 0.42,
-    hipsToHeight: 0.565,
-    shoulderToHeight: 0.243,
-    neckToHeight: 0.195,
-    sleeveToHeight: 0.345,
-    inseamToHeight: 0.45,
-    thighToHeight: 0.34,
-    calfToHeight: 0.21,
-    armLengthToHeight: 0.43,
-    torsoToHeight: 0.28,
-    headToHeight: 0.13,
+    // ISO 8559 Female M: height=162, bust=88, underbust=72, waist=70, hips=94
+    chestToHeight: 0.543,       // Bust circumference / height (88/162)
+    waistToHeight: 0.432,       // Waist circumference / height (70/162)
+    hipsToHeight: 0.580,        // Hip circumference / height (94/162)
+    shoulderToHeight: 0.235,    // Shoulder width / height (38/162)
+    neckToHeight: 0.216,        // Neck circumference / height (35/162)
+    sleeveToHeight: 0.364,      // Sleeve length / height (59/162)
+    inseamToHeight: 0.481,      // Inseam / height (78/162)
+    thighToHeight: 0.346,       // Thigh circumference / height (56/162)
+    calfToHeight: 0.210,        // Calf circumference / height (34/162)
+    armLengthToHeight: 0.43,    // Full arm length / height
+    torsoToHeight: 0.28,        // Shoulder to hip / height
+    headToHeight: 0.13,         // Head height / height
+    underbustToHeight: 0.444,   // Under bust circumference / height (72/162)
+    halfLengthToHeight: 0.175,  // Shoulder to waist (~28/162)
+    topLengthToHeight: 0.25,    // Shoulder to hip (~40/162)
+    bicepToHeight: 0.185,       // Upper arm circumference / height (30/162)
+    elbowToHeight: 0.15,        // Elbow circumference / height (~24/162)
   },
   // Neutral average of male/female
   other: {
-    chestToHeight: 0.515,
-    waistToHeight: 0.43,
-    hipsToHeight: 0.548,
-    shoulderToHeight: 0.251,
-    neckToHeight: 0.205,
-    sleeveToHeight: 0.355,
-    inseamToHeight: 0.45,
-    thighToHeight: 0.335,
-    calfToHeight: 0.21,
+    chestToHeight: 0.548,
+    waistToHeight: 0.452,
+    hipsToHeight: 0.566,
+    shoulderToHeight: 0.247,
+    neckToHeight: 0.217,
+    sleeveToHeight: 0.360,
+    inseamToHeight: 0.474,
+    thighToHeight: 0.346,
+    calfToHeight: 0.217,
     armLengthToHeight: 0.435,
     torsoToHeight: 0.29,
     headToHeight: 0.13,
+    underbustToHeight: 0.482,
+    halfLengthToHeight: 0.178,
+    topLengthToHeight: 0.25,
+    bicepToHeight: 0.190,
+    elbowToHeight: 0.155,
   },
 };
 
 // Standard deviations for each ratio (used for outlier detection)
+// Standard deviations computed from ISO 8559-1 XS–XXL spread
+// σ ≈ (XXL − XS) / 4  divided by reference height
 const RATIO_STDDEV = {
-  chestToHeight: 0.04,
-  waistToHeight: 0.05,
-  hipsToHeight: 0.04,
-  shoulderToHeight: 0.015,
-  neckToHeight: 0.015,
-  sleeveToHeight: 0.02,
-  inseamToHeight: 0.025,
-  thighToHeight: 0.03,
-  calfToHeight: 0.02,
+  chestToHeight: 0.046,    // Male: (112-88)/4/174 ≈ 0.035, Female: (112-80)/4/162 ≈ 0.049 → avg
+  waistToHeight: 0.057,    // Male: (102-72)/4/174 ≈ 0.043, Female: (94-60)/4/162 ≈ 0.052 → avg+margin
+  hipsToHeight: 0.044,     // Male: (112-88)/4/174 ≈ 0.035, Female: (118-86)/4/162 ≈ 0.049 → avg
+  shoulderToHeight: 0.018, // Male: (49-41)/4/174 ≈ 0.012, Female: (42-34)/4/162 ≈ 0.012 → widened
+  neckToHeight: 0.017,     // Male: (42-36)/4/174 ≈ 0.009, Female: (37-33)/4/162 ≈ 0.006 → widened
+  sleeveToHeight: 0.020,   // Male: (66-58)/4/174 ≈ 0.012, Female: (61-57)/4/162 ≈ 0.006 → widened
+  inseamToHeight: 0.025,   // Modest variation across sizes; kept generous
+  thighToHeight: 0.035,    // Male: (66-54)/4/174 ≈ 0.017, Female: (64-48)/4/162 ≈ 0.025 → widened
+  calfToHeight: 0.022,     // Male: (43-35)/4/174 ≈ 0.012, Female: (38-30)/4/162 ≈ 0.012 → widened
+  underbustToHeight: 0.042, // Female: (86-64)/4/162 ≈ 0.034, Male ≈ chest → avg
+  bicepToHeight: 0.023,    // Male: (38-30)/4/174 ≈ 0.012, Female: (34-26)/4/162 ≈ 0.012 → widened
+  elbowToHeight: 0.018,    // conservative widening
 };
 
 // ============================================================
@@ -220,6 +242,9 @@ function buildPersonalizedRatios(
     { measurementKey: 'inseam', ratioKey: 'inseamToHeight' },
     { measurementKey: 'thigh', ratioKey: 'thighToHeight' },
     { measurementKey: 'calf', ratioKey: 'calfToHeight' },
+    { measurementKey: 'underbust', ratioKey: 'underbustToHeight' },
+    { measurementKey: 'roundSleeveBicep', ratioKey: 'bicepToHeight' },
+    { measurementKey: 'roundSleeveElbow', ratioKey: 'elbowToHeight' },
   ];
 
   const personalized = { ...baseRatios };
@@ -386,6 +411,22 @@ class MeasurementEngine {
       ...circumferences,
     };
 
+    // Step 6.1: Gender-specific additional measurements
+    const effectiveHeight = rawMeasurements.height > 0
+      ? rawMeasurements.height
+      : (knownHeight && knownHeight > 0 ? knownHeight : 170);
+    const genderRatiosStep6 = this.getActiveRatios(gender);
+
+    // Arm measurements (useful for shirt/blouse fitting regardless of gender)
+    rawMeasurements.roundSleeveBicep = this.round(effectiveHeight * genderRatiosStep6.bicepToHeight);
+    rawMeasurements.roundSleeveElbow = this.round(effectiveHeight * genderRatiosStep6.elbowToHeight);
+
+    // Female-specific garment length measurements
+    if (gender === 'female') {
+      rawMeasurements.halfLength = frontMeasurements.halfLength;
+      rawMeasurements.topLength = frontMeasurements.topLength;
+    }
+
     if (__DEV__) {
       console.log('[MeasEngine] rawMeasurements:', JSON.stringify(rawMeasurements));
       const nanKeys = Object.entries(rawMeasurements)
@@ -414,11 +455,18 @@ class MeasurementEngine {
       if (sanitizedRaw.sleeve <= 0) sanitizedRaw.sleeve = this.round(referenceHeight * ratios.sleeveToHeight);
       if (sanitizedRaw.inseam <= 0) sanitizedRaw.inseam = this.round(referenceHeight * ratios.inseamToHeight);
       if (sanitizedRaw.chest <= 0) sanitizedRaw.chest = this.round(referenceHeight * ratios.chestToHeight);
+      if (sanitizedRaw.underbust <= 0) sanitizedRaw.underbust = this.round(referenceHeight * ratios.underbustToHeight);
       if (sanitizedRaw.waist <= 0) sanitizedRaw.waist = this.round(referenceHeight * ratios.waistToHeight);
       if (sanitizedRaw.hips <= 0) sanitizedRaw.hips = this.round(referenceHeight * ratios.hipsToHeight);
       if (sanitizedRaw.neck <= 0) sanitizedRaw.neck = this.round(referenceHeight * ratios.neckToHeight);
       if (sanitizedRaw.thigh <= 0) sanitizedRaw.thigh = this.round(referenceHeight * ratios.thighToHeight);
       if (sanitizedRaw.calf <= 0) sanitizedRaw.calf = this.round(referenceHeight * ratios.calfToHeight);
+      if ((sanitizedRaw.roundSleeveBicep ?? 0) <= 0) sanitizedRaw.roundSleeveBicep = this.round(referenceHeight * ratios.bicepToHeight);
+      if ((sanitizedRaw.roundSleeveElbow ?? 0) <= 0) sanitizedRaw.roundSleeveElbow = this.round(referenceHeight * ratios.elbowToHeight);
+      if (gender === 'female') {
+        if ((sanitizedRaw.halfLength ?? 0) <= 0) sanitizedRaw.halfLength = this.round(referenceHeight * ratios.halfLengthToHeight);
+        if ((sanitizedRaw.topLength ?? 0) <= 0) sanitizedRaw.topLength = this.round(referenceHeight * ratios.topLengthToHeight);
+      }
     }
 
     // Step 7: Apply anthropometric validation & correction
@@ -438,7 +486,7 @@ class MeasurementEngine {
       if (rawVal && rawVal > 0) {
         const ratio = anchorMeasurement.valueCm / rawVal;
         // Apply proportional correction to related circumference measurements
-        const circumKeys = ['chest', 'waist', 'hips', 'neck', 'thigh', 'calf'];
+        const circumKeys = ['chest', 'underbust', 'waist', 'hips', 'neck', 'thigh', 'calf', 'roundSleeveBicep', 'roundSleeveElbow'];
         if (circumKeys.includes(anchorMeasurement.key)) {
           // Anchor affects all circumferences proportionally (same cross-section error)
           for (const ck of circumKeys) {
@@ -697,6 +745,15 @@ class MeasurementEngine {
       ((leftInseamPixels + rightInseamPixels) / 2) * scaleFactor
     );
 
+    // HALF LENGTH: shoulder to waist (approx 62% of shoulder-to-hip torso length)
+    const shoulderMidY = ((leftShoulder.y + rightShoulder.y) / 2) * imgH;
+    const hipMidY = ((leftHip.y + rightHip.y) / 2) * imgH;
+    const torsoPixels = Math.abs(hipMidY - shoulderMidY);
+    const halfLength = this.round(torsoPixels * 0.62 * scaleFactor);
+
+    // TOP LENGTH: shoulder to hip (full garment torso length)
+    const topLength = this.round(torsoPixels * scaleFactor);
+
     // FRONT WIDTHS (for circumference calculation)
     const chestFrontWidth = this.distance2D(px(leftShoulder), px(rightShoulder)) * 0.95;
     const waistFrontWidth = this.distance2D(px(leftHip), px(rightHip)) * 1.1;
@@ -709,6 +766,8 @@ class MeasurementEngine {
       { x: px(leftKnee).x, y: (px(leftKnee).y + px(leftAnkle).y) / 2 },
       { x: px(rightKnee).x, y: (px(rightKnee).y + px(rightAnkle).y) / 2 }
     ) * 0.45;
+    // UNDERBUST: same axis as chest, slightly narrower (87% of chest width)
+    const underbustFrontWidth = chestFrontWidth * 0.87;
 
     // NECK WIDTH from front
     const neckFrontWidth = this.distance2D(px(leftShoulder), px(rightShoulder)) * 0.22;
@@ -718,9 +777,12 @@ class MeasurementEngine {
       shoulderWidth,
       sleeveLength,
       inseam,
+      halfLength,
+      topLength,
       // Front widths in pixels (for circumference calc)
       frontWidths: {
         chest: chestFrontWidth * scaleFactor,
+        underbust: underbustFrontWidth * scaleFactor,
         waist: waistFrontWidth * scaleFactor,
         hips: hipFrontWidth * scaleFactor,
         neck: neckFrontWidth * scaleFactor,
@@ -878,6 +940,12 @@ class MeasurementEngine {
             result[part] = this.estimateCircumferenceFromWidth(fw || frontWidths[part as keyof typeof frontWidths] || 0);
           }
         }
+        // Underbust: use skeleton frontWidth (no contour for this level) + chest depth
+        const ubFW = frontWidths.underbust;
+        const chestDepthSide = contourSideWidths.chest || sideMeasurements?.sideDepths.chest;
+        result.underbust = ubFW > 0
+          ? this.ellipseCircumference(ubFW / 2, ((chestDepthSide || ubFW) * 0.87) / 2)
+          : 0;
         return result;
       }
 
@@ -886,6 +954,7 @@ class MeasurementEngine {
         const depths = sideMeasurements.sideDepths;
         return {
           chest: this.ellipseCircumference((contourFrontWidths.chest || frontWidths.chest) / 2, depths.chest / 2),
+          underbust: this.ellipseCircumference(frontWidths.underbust / 2, (depths.chest * 0.87) / 2),
           waist: this.ellipseCircumference((contourFrontWidths.waist || frontWidths.waist) / 2, depths.waist / 2),
           hips: this.ellipseCircumference((contourFrontWidths.hips || frontWidths.hips) / 2, depths.hips / 2),
           neck: this.ellipseCircumference((contourFrontWidths.neck || frontWidths.neck) / 2, depths.neck / 2),
@@ -897,8 +966,8 @@ class MeasurementEngine {
       // DECENT: front contour only, no side view → estimate depth from width
       // Typical depth/width ratios from anthropometric data
       const depthRatios = gender === 'male'
-        ? { chest: 0.75, waist: 0.82, hips: 0.72, neck: 0.85, thigh: 0.95, calf: 0.90 }
-        : { chest: 0.68, waist: 0.75, hips: 0.78, neck: 0.80, thigh: 0.92, calf: 0.88 };
+        ? { chest: 0.75, waist: 0.82, hips: 0.72, neck: 0.85, thigh: 0.95, calf: 0.90, underbust: 0.75 }
+        : { chest: 0.68, waist: 0.75, hips: 0.78, neck: 0.80, thigh: 0.92, calf: 0.88, underbust: 0.68 };
 
       warnings.push(
         'Side view not provided - using contour front width with estimated depth. ' +
@@ -906,8 +975,10 @@ class MeasurementEngine {
       );
 
       const result: Record<string, number> = {};
-      for (const part of ['chest', 'waist', 'hips', 'neck', 'thigh', 'calf'] as const) {
-        const w = contourFrontWidths[part] || frontWidths[part as keyof typeof frontWidths] || 0;
+      for (const part of ['chest', 'underbust', 'waist', 'hips', 'neck', 'thigh', 'calf'] as const) {
+        const w = part === 'underbust'
+          ? frontWidths.underbust
+          : (contourFrontWidths[part as keyof typeof contourFrontWidths] || frontWidths[part as keyof typeof frontWidths] || 0);
         const ratio = depthRatios[part] || 0.8;
         result[part] = this.ellipseCircumference(w / 2, (w * ratio) / 2);
       }
@@ -921,6 +992,7 @@ class MeasurementEngine {
       const depths = sideMeasurements.sideDepths;
       return {
         chest: this.ellipseCircumference(frontWidths.chest / 2, depths.chest / 2),
+        underbust: this.ellipseCircumference(frontWidths.underbust / 2, (depths.chest * 0.87) / 2),
         waist: this.ellipseCircumference(frontWidths.waist / 2, depths.waist / 2),
         hips: this.ellipseCircumference(frontWidths.hips / 2, depths.hips / 2),
         neck: this.ellipseCircumference(frontWidths.neck / 2, depths.neck / 2),
@@ -940,6 +1012,7 @@ class MeasurementEngine {
 
     return {
       chest: this.round(height * ratios.chestToHeight),
+      underbust: this.round(height * ratios.underbustToHeight),
       waist: this.round(height * ratios.waistToHeight),
       hips: this.round(height * ratios.hipsToHeight),
       neck: this.round(height * ratios.neckToHeight),
@@ -1025,6 +1098,7 @@ class MeasurementEngine {
       stdDevKey?: keyof typeof RATIO_STDDEV;
     }> = [
       { key: 'chest', ratioKey: 'chestToHeight', stdDevKey: 'chestToHeight' },
+      { key: 'underbust', ratioKey: 'underbustToHeight', stdDevKey: 'underbustToHeight' },
       { key: 'waist', ratioKey: 'waistToHeight', stdDevKey: 'waistToHeight' },
       { key: 'hips', ratioKey: 'hipsToHeight', stdDevKey: 'hipsToHeight' },
       { key: 'shoulders', ratioKey: 'shoulderToHeight', stdDevKey: 'shoulderToHeight' },
@@ -1033,6 +1107,8 @@ class MeasurementEngine {
       { key: 'inseam', ratioKey: 'inseamToHeight', stdDevKey: 'inseamToHeight' },
       { key: 'thigh', ratioKey: 'thighToHeight', stdDevKey: 'thighToHeight' },
       { key: 'calf', ratioKey: 'calfToHeight', stdDevKey: 'calfToHeight' },
+      { key: 'roundSleeveBicep', ratioKey: 'bicepToHeight', stdDevKey: 'bicepToHeight' },
+      { key: 'roundSleeveElbow', ratioKey: 'elbowToHeight', stdDevKey: 'elbowToHeight' },
     ];
 
     for (const check of checks) {
@@ -1116,12 +1192,17 @@ class MeasurementEngine {
       { key: 'shoulders', ratioKey: 'shoulderToHeight', needsSideView: false, inherentDifficulty: 0.1 },
       { key: 'sleeve', ratioKey: 'sleeveToHeight', needsSideView: false, inherentDifficulty: 0.15 },
       { key: 'inseam', ratioKey: 'inseamToHeight', needsSideView: false, inherentDifficulty: 0.2 },
+      { key: 'halfLength', ratioKey: 'halfLengthToHeight', needsSideView: false, inherentDifficulty: 0.15 },
+      { key: 'topLength', ratioKey: 'topLengthToHeight', needsSideView: false, inherentDifficulty: 0.15 },
       { key: 'chest', ratioKey: 'chestToHeight', needsSideView: true, inherentDifficulty: 0.2 },
+      { key: 'underbust', ratioKey: 'underbustToHeight', needsSideView: true, inherentDifficulty: 0.25 },
       { key: 'waist', ratioKey: 'waistToHeight', needsSideView: true, inherentDifficulty: 0.2 },
       { key: 'hips', ratioKey: 'hipsToHeight', needsSideView: true, inherentDifficulty: 0.2 },
       { key: 'neck', ratioKey: 'neckToHeight', needsSideView: true, inherentDifficulty: 0.3 },
       { key: 'thigh', ratioKey: 'thighToHeight', needsSideView: true, inherentDifficulty: 0.3 },
       { key: 'calf', ratioKey: 'calfToHeight', needsSideView: true, inherentDifficulty: 0.35 },
+      { key: 'roundSleeveBicep', ratioKey: 'bicepToHeight', needsSideView: false, inherentDifficulty: 0.35 },
+      { key: 'roundSleeveElbow', ratioKey: 'elbowToHeight', needsSideView: false, inherentDifficulty: 0.35 },
     ];
 
     for (const config of measurementConfigs) {
@@ -1439,7 +1520,7 @@ class MeasurementEngine {
 
   /**
    * Enforce anatomical consistency constraints between related measurements.
-   * E.g., hips >= waist, chest > neck, thigh < hips, etc.
+   * Uses ISO 8559-1 absolute ranges (XS–XXL) and anatomical proportion rules.
    */
   private applyCrossMeasurementValidation(
     measurements: Record<string, number>,
@@ -1448,10 +1529,68 @@ class MeasurementEngine {
   ): Record<string, number> {
     const m = { ...measurements };
 
+    // ── ISO 8559-1 absolute ranges (XS–XXL) ──
+    const isoRanges: Record<string, Record<string, { min: number; max: number }>> = {
+      male: {
+        chest:     { min: 88, max: 120 },
+        waist:     { min: 72, max: 108 },
+        hips:      { min: 88, max: 116 },
+        shoulders: { min: 41, max: 51 },
+        neck:      { min: 36, max: 44 },
+        sleeve:    { min: 58, max: 68 },
+        inseam:    { min: 76, max: 86 },
+        thigh:     { min: 54, max: 68 },
+        calf:      { min: 35, max: 44 },
+        bicep:     { min: 30, max: 40 },
+      },
+      female: {
+        chest:     { min: 80, max: 116 },
+        underbust: { min: 64, max: 92 },
+        waist:     { min: 60, max: 98 },
+        hips:      { min: 86, max: 122 },
+        shoulders: { min: 34, max: 44 },
+        neck:      { min: 33, max: 39 },
+        sleeve:    { min: 57, max: 63 },
+        inseam:    { min: 73, max: 83 },
+        thigh:     { min: 48, max: 66 },
+        calf:      { min: 30, max: 40 },
+        bicep:     { min: 26, max: 36 },
+      },
+      other: {
+        chest:     { min: 80, max: 120 },
+        waist:     { min: 60, max: 108 },
+        hips:      { min: 86, max: 122 },
+        shoulders: { min: 34, max: 51 },
+        neck:      { min: 33, max: 44 },
+        sleeve:    { min: 57, max: 68 },
+        inseam:    { min: 73, max: 86 },
+        thigh:     { min: 48, max: 68 },
+        calf:      { min: 30, max: 44 },
+        bicep:     { min: 26, max: 40 },
+      },
+    };
+
+    // Apply absolute ISO range clamping — with 10% tolerance margin for outlier body types
+    const ranges = isoRanges[gender] || isoRanges.other;
+    for (const [key, bounds] of Object.entries(ranges)) {
+      if (m[key] > 0) {
+        const marginMin = bounds.min * 0.90; // 10% below XS
+        const marginMax = bounds.max * 1.10; // 10% above XXL
+        if (m[key] < marginMin || m[key] > marginMax) {
+          const ratios = this.getActiveRatios(gender);
+          const ratioKey = `${key}ToHeight` as keyof typeof ratios;
+          if (m.height > 0 && ratios[ratioKey]) {
+            const expected = m.height * (ratios[ratioKey] as number);
+            warnings.push(`${key} (${this.round(m[key])}cm) outside ISO range [${marginMin.toFixed(0)}–${marginMax.toFixed(0)}] — blending toward ${this.round(expected)}cm.`);
+            m[key] = this.round(m[key] * 0.3 + expected * 0.7);
+          }
+        }
+      }
+    }
+
     // Rule 1: Hips should generally be >= waist (in most body types)
     if (m.hips > 0 && m.waist > 0 && m.waist > m.hips * 1.15) {
       warnings.push('Waist exceeds hips by >15% — adjusting for consistency.');
-      // Blend toward a more typical ratio
       const avg = (m.waist + m.hips) / 2;
       m.waist = this.round(avg * 0.98);
       m.hips = this.round(avg * 1.02);
@@ -1474,7 +1613,6 @@ class MeasurementEngine {
     }
 
     // Rule 5: Shoulder width should be reasonable relative to height
-    // Bi-deltoid width is typically 24-26% of height
     if (m.shoulders > 0 && m.height > 0) {
       const ratios = this.getActiveRatios(gender);
       const expectedShoulder = m.height * ratios.shoulderToHeight;
@@ -1490,7 +1628,8 @@ class MeasurementEngine {
     if (m.sleeve > 0 && m.height > 0) {
       const sleeveRatio = m.sleeve / m.height;
       if (sleeveRatio > 0.45 || sleeveRatio < 0.25) {
-        const expected = m.height * 0.355;
+        const ratios = this.getActiveRatios(gender);
+        const expected = m.height * ratios.sleeveToHeight;
         m.sleeve = this.round(m.sleeve * 0.7 + expected * 0.3);
       }
     }
@@ -1499,7 +1638,8 @@ class MeasurementEngine {
     if (m.inseam > 0 && m.height > 0) {
       const inseamRatio = m.inseam / m.height;
       if (inseamRatio > 0.55 || inseamRatio < 0.35) {
-        const expected = m.height * 0.45;
+        const ratios = this.getActiveRatios(gender);
+        const expected = m.height * ratios.inseamToHeight;
         m.inseam = this.round(m.inseam * 0.7 + expected * 0.3);
       }
     }

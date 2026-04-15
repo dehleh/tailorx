@@ -40,7 +40,7 @@ export interface ContourResult {
 
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_POSE_API_URL?.replace('/v1/pose', '') ||
-  'http://localhost:8000';
+  'https://tailorx-pose-api-production.up.railway.app';
 const API_KEY = process.env.EXPO_PUBLIC_POSE_API_KEY || '';
 const TIMEOUT_MS = 30000;
 

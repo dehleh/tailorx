@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 
 // Update this with your actual API URL
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.tailorx.com/v1';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tailorx-pose-api-production.up.railway.app';
 
 class ApiClient {
   private client: AxiosInstance;

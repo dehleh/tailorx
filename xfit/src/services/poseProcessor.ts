@@ -40,10 +40,12 @@ export interface CloudConfig {
 // DEFAULT CONFIG
 // ============================================================
 
+const PRODUCTION_API_URL = 'https://tailorx-pose-api-production.up.railway.app/v1/pose';
+
 const DEFAULT_CLOUD_CONFIG: CloudConfig = {
-  apiUrl: process.env.EXPO_PUBLIC_POSE_API_URL || 'http://localhost:8000/v1/pose',
+  apiUrl: process.env.EXPO_PUBLIC_POSE_API_URL || PRODUCTION_API_URL,
   apiKey: process.env.EXPO_PUBLIC_POSE_API_KEY || '',
-  timeout: 30000,
+  timeout: 45000,   // 45s to handle Railway cold starts
   retries: 2,
 };
 
@@ -67,6 +69,8 @@ const BLAZEPOSE_LANDMARK_NAMES = [
 class PoseProcessor {
   private cloudConfig: CloudConfig;
   private isCloudAvailable: boolean | null = null;
+  private lastCloudFailure: number = 0;
+  private static readonly CLOUD_RETRY_INTERVAL_MS = 30000; // Retry cloud every 30s after failure
 
   constructor(config?: Partial<CloudConfig>) {
     this.cloudConfig = { ...DEFAULT_CLOUD_CONFIG, ...config };
@@ -82,33 +86,50 @@ class PoseProcessor {
   ): Promise<PoseProcessingResult> {
     const startTime = Date.now();
 
+    // Reset cloud availability after retry interval so we don't permanently give up
+    if (
+      this.isCloudAvailable === false &&
+      Date.now() - this.lastCloudFailure > PoseProcessor.CLOUD_RETRY_INTERVAL_MS
+    ) {
+      console.log('[PoseProcessor] Resetting cloud availability for retry');
+      this.isCloudAvailable = null;
+    }
+
     // Try cloud processing first (most accurate)
     if (this.isCloudAvailable !== false) {
       try {
+        console.log('[PoseProcessor] Attempting cloud processing at:', this.cloudConfig.apiUrl);
         const result = await this.processWithCloud(imageUri, captureType);
         this.isCloudAvailable = true;
+        console.log('[PoseProcessor] Cloud processing succeeded, confidence:', result.confidence);
         return {
           ...result,
           processingTimeMs: Date.now() - startTime,
         };
       } catch (error) {
-        console.warn('Cloud processing failed, falling back to on-device:', error);
+        console.warn('[PoseProcessor] Cloud processing failed:', error);
         this.isCloudAvailable = false;
+        this.lastCloudFailure = Date.now();
       }
+    } else {
+      console.log('[PoseProcessor] Skipping cloud (marked unavailable, will retry after cooldown)');
     }
 
     // Try on-device processing
     try {
+      console.log('[PoseProcessor] Trying on-device processing...');
       const result = await this.processOnDevice(imageUri, captureType);
+      console.log('[PoseProcessor] On-device processing succeeded');
       return {
         ...result,
         processingTimeMs: Date.now() - startTime,
       };
     } catch (error) {
-      console.warn('On-device processing failed, using estimation:', error);
+      console.warn('[PoseProcessor] On-device processing failed:', error);
     }
 
     // Last resort: return estimated landmarks from image dimensions
+    console.warn('[PoseProcessor] ⚠️ Using FALLBACK estimation — measurements will be inaccurate!');
     const result = await this.estimateLandmarksFromImageSize(imageUri, captureType);
     return {
       ...result,
@@ -313,7 +334,10 @@ class PoseProcessor {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), this.cloudConfig.timeout);
 
-          const response = await fetch(`${this.cloudConfig.apiUrl}/detect`, {
+          const detectUrl = `${this.cloudConfig.apiUrl}/detect`;
+          console.log(`[PoseProcessor] Cloud request attempt ${attempt + 1}/${this.cloudConfig.retries + 1} → ${detectUrl}`);
+
+          const response = await fetch(detectUrl, {
           method: 'POST',
           headers,
           body: JSON.stringify({

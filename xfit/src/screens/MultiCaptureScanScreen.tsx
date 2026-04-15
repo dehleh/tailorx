@@ -434,6 +434,12 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           inseam: safe(result.measurements.inseam),
           thigh: safe(result.measurements.thigh),
           calf: safe(result.measurements.calf),
+          // Gender-specific and additional measurements
+          ...(result.measurements.underbust && { underbust: safe(result.measurements.underbust) }),
+          ...(result.measurements.halfLength && { halfLength: safe(result.measurements.halfLength) }),
+          ...(result.measurements.topLength && { topLength: safe(result.measurements.topLength) }),
+          ...(result.measurements.roundSleeveBicep && { roundSleeveBicep: safe(result.measurements.roundSleeveBicep) }),
+          ...(result.measurements.roundSleeveElbow && { roundSleeveElbow: safe(result.measurements.roundSleeveElbow) }),
         },
         unit: user?.preferredUnit || 'cm',
         images: allCaptures.map(c => c.imageUri),
