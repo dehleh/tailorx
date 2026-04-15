@@ -47,7 +47,18 @@ from pydantic import BaseModel
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
-from PIL import Image
+from PIL import Image, ImageOps
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def _open_image(image_bytes: bytes) -> Image.Image:
+    """Open an image from bytes, applying EXIF rotation so pixel data
+    matches the visual orientation (critical for portrait phone photos)."""
+    img = Image.open(io.BytesIO(image_bytes))
+    img = ImageOps.exif_transpose(img)  # Apply EXIF rotation
+    return img.convert("RGB")
 
 # ============================================================
 # CONFIG
@@ -322,9 +333,9 @@ async def detect_pose(
     start_time = time.time()
 
     try:
-        # Decode base64 image
+        # Decode base64 image (apply EXIF rotation for correct orientation)
         image_bytes = base64.b64decode(request.image)
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = _open_image(image_bytes)
         image_width, image_height = pil_image.size
         logger.info(f"Pose request: image {image_width}x{image_height}, type={request.captureType}")
 
@@ -501,7 +512,7 @@ async def check_image_quality(
 
     try:
         image_bytes = base64.b64decode(request.image)
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = _open_image(image_bytes)
         np_image = np.array(pil_image)
         result = _analyze_image_quality(np_image)
         return ImageQualityResult(**result)
@@ -660,7 +671,7 @@ async def detect_reference(
 
     try:
         image_bytes = base64.b64decode(request.image)
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = _open_image(image_bytes)
         np_image = np.array(pil_image)
         result = _detect_reference_object(np_image)
         return ReferenceDetectionResult(**result)
@@ -942,7 +953,7 @@ async def extract_body_contour(
 
     try:
         image_bytes = base64.b64decode(request.image)
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = _open_image(image_bytes)
         np_image = np.array(pil_image)
 
         result = _extract_body_contour_widths(
@@ -1023,7 +1034,7 @@ async def estimate_depth(
         import torch
 
         image_bytes = base64.b64decode(request.image)
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = _open_image(image_bytes)
         np_image = np.array(pil_image)
         h, w = np_image.shape[:2]
 
@@ -1231,7 +1242,7 @@ async def detect_aruco_marker(
     start = time.time()
     try:
         image_bytes = base64.b64decode(request.image)
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = _open_image(image_bytes)
         np_image = np.array(pil_image)
 
         result = _detect_aruco(np_image, request.marker_size_cm)
@@ -1341,7 +1352,7 @@ async def detect_pose_refined(
 
     try:
         image_bytes = base64.b64decode(request.image)
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = _open_image(image_bytes)
         image_width, image_height = pil_image.size
         logger.info(f"Refined pose request: image {image_width}x{image_height}")
 
