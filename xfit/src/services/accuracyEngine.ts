@@ -366,6 +366,16 @@ class AccuracyEngine {
       }
 
       const prevAvg = historicalValues.reduce((a, b) => a + b, 0) / historicalValues.length;
+
+      // Guard against poison feedback loop: if new value diverges >30% from
+      // historical average, the history is likely corrupted — trust the new value
+      const divergence = Math.abs(newValue - prevAvg) / Math.max(prevAvg, 1);
+      if (divergence > 0.30) {
+        smoothed[key] = newValue;
+        adjustments[key] = 0;
+        continue;
+      }
+
       const smoothedValue = alpha * newValue + (1 - alpha) * prevAvg;
       const rounded = Math.round(smoothedValue * 10) / 10;
 

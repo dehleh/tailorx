@@ -584,11 +584,25 @@ class MeasurementEngine {
     warnings: string[]
   ): number {
     // Priority 1: Reference object calibration (most accurate)
+    // NOTE: Height-only calibration (type='known_height') sets pixelWidth=0
+    // and realWidthCm=0, producing NaN. Skip it and use Priority 2 instead.
     if (calibration) {
-      const pixelsPerCm = calibration.pixelWidth / calibration.realWidthCm;
-      const sf = 1 / pixelsPerCm; // cm per pixel
-      if (__DEV__) console.log('[MeasEngine] scaleFactor from calibration:', sf);
-      return isFinite(sf) && sf > 0 ? sf : 1;
+      // Handle both CalibrationReference and CalibrationResult shapes
+      const ref = (calibration as any).reference || calibration;
+      const calType = ref.type || (calibration as any).type;
+      
+      if (calType !== 'known_height') {
+        const pw = ref.pixelWidth || (calibration as any).pixelWidth || 0;
+        const rw = ref.realWidthCm || (calibration as any).realWidthCm || 0;
+        const pixelsPerCm = pw / rw;
+        const sf = 1 / pixelsPerCm; // cm per pixel
+        if (__DEV__) console.log('[MeasEngine] scaleFactor from calibration:', sf, 'type:', calType);
+        if (isFinite(sf) && sf > 0) {
+          return sf;
+        }
+      }
+      // Height-only or invalid calibration — fall through to known height
+      if (__DEV__) console.log('[MeasEngine] calibration type:', calType, '— using knownHeight instead');
     }
 
     // Priority 2: Known height calibration
@@ -1123,16 +1137,23 @@ class MeasurementEngine {
       const stdDev = check.stdDevKey ? RATIO_STDDEV[check.stdDevKey] : 0.03;
       const zScore = Math.abs(actualRatio - expectedRatio) / stdDev;
 
-      if (zScore > 3) {
-        // Extreme outlier (>3σ): heavy correction toward mean
+      if (zScore > 5) {
+        // Extreme outlier (>5σ): measurement is nonsensical — use expected directly
+        warnings.push(
+          `${check.key} measurement (${measured.toFixed(1)}cm) is wildly off (z=${zScore.toFixed(1)}). ` +
+          `Replacing with expected value.`
+        );
+        corrected[check.key] = this.round(expected);
+      } else if (zScore > 3) {
+        // Major outlier (3-5σ): heavy correction toward expected
         warnings.push(
           `${check.key} measurement (${measured.toFixed(1)}cm) is a statistical outlier. ` +
-          `Applying correction.`
+          `Applying strong correction.`
         );
-        corrected[check.key] = this.round(measured * 0.4 + expected * 0.6);
+        corrected[check.key] = this.round(measured * 0.15 + expected * 0.85);
       } else if (zScore > 2) {
-        // Moderate outlier (2-3σ): light correction
-        corrected[check.key] = this.round(measured * 0.8 + expected * 0.2);
+        // Moderate outlier (2-3σ): moderate correction
+        corrected[check.key] = this.round(measured * 0.6 + expected * 0.4);
       }
       // Within 2σ: keep measured value (normal variation)
     }
@@ -1570,20 +1591,18 @@ class MeasurementEngine {
       },
     };
 
-    // Apply absolute ISO range clamping — with 10% tolerance margin for outlier body types
+    // Apply absolute ISO range hard-clamping — with 10% tolerance margin for outlier body types
     const ranges = isoRanges[gender] || isoRanges.other;
     for (const [key, bounds] of Object.entries(ranges)) {
       if (m[key] > 0) {
         const marginMin = bounds.min * 0.90; // 10% below XS
         const marginMax = bounds.max * 1.10; // 10% above XXL
-        if (m[key] < marginMin || m[key] > marginMax) {
-          const ratios = this.getActiveRatios(gender);
-          const ratioKey = `${key}ToHeight` as keyof typeof ratios;
-          if (m.height > 0 && ratios[ratioKey]) {
-            const expected = m.height * (ratios[ratioKey] as number);
-            warnings.push(`${key} (${this.round(m[key])}cm) outside ISO range [${marginMin.toFixed(0)}–${marginMax.toFixed(0)}] — blending toward ${this.round(expected)}cm.`);
-            m[key] = this.round(m[key] * 0.3 + expected * 0.7);
-          }
+        if (m[key] > marginMax) {
+          warnings.push(`${key} (${this.round(m[key])}cm) exceeds ISO max ${marginMax.toFixed(0)}cm — hard-clamping.`);
+          m[key] = this.round(marginMax);
+        } else if (m[key] < marginMin) {
+          warnings.push(`${key} (${this.round(m[key])}cm) below ISO min ${marginMin.toFixed(0)}cm — hard-clamping.`);
+          m[key] = this.round(marginMin);
         }
       }
     }

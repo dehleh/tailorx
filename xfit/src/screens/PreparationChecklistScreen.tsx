@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
 import { Colors } from '../constants/colors';
+import { useUserStore } from '../stores/userStore';
 
 interface CheckItem {
   id: string;
@@ -53,12 +54,24 @@ const initialItems: CheckItem[] = [
 
 export default function PreparationChecklistScreen({ navigation }: any) {
   const [items, setItems] = useState(initialItems);
+  const userProfile = useUserStore((s) => s.user);
+  const updateUser = useUserStore((s) => s.updateUser);
+  const [selectedGender, setSelectedGender] = useState<'male' | 'female' | 'other'>(
+    (userProfile?.gender as 'male' | 'female' | 'other') || 'other'
+  );
   const checkedCount = items.filter((i) => i.checked).length;
   const allChecked = checkedCount === items.length;
+  const genderSelected = selectedGender === 'male' || selectedGender === 'female';
+  const canStart = allChecked && genderSelected;
   const progress = Math.round((checkedCount / items.length) * 100);
 
   const toggleItem = (id: string) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item)));
+  };
+
+  const handleGenderSelect = (gender: 'male' | 'female') => {
+    setSelectedGender(gender);
+    updateUser({ gender });
   };
 
   const handleStart = () => {
@@ -80,6 +93,32 @@ export default function PreparationChecklistScreen({ navigation }: any) {
 
         <Text style={styles.title}>Preparation checklist</Text>
         <Text style={styles.subtitle}>Make sure you're ready for the best scanning experience</Text>
+
+        {/* Gender selector */}
+        <View style={styles.genderSection}>
+          <Text style={styles.genderLabel}>Select your gender *</Text>
+          <View style={styles.genderRow}>
+            <TouchableOpacity
+              style={[styles.genderButton, selectedGender === 'male' && styles.genderButtonActive]}
+              onPress={() => handleGenderSelect('male')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.genderEmoji}>👨</Text>
+              <Text style={[styles.genderText, selectedGender === 'male' && styles.genderTextActive]}>Male</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.genderButton, selectedGender === 'female' && styles.genderButtonActive]}
+              onPress={() => handleGenderSelect('female')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.genderEmoji}>👩</Text>
+              <Text style={[styles.genderText, selectedGender === 'female' && styles.genderTextActive]}>Female</Text>
+            </TouchableOpacity>
+          </View>
+          {!genderSelected && (
+            <Text style={styles.genderHint}>Required for accurate measurements</Text>
+          )}
+        </View>
 
         {/* Progress */}
         <View style={styles.progressRow}>
@@ -123,13 +162,13 @@ export default function PreparationChecklistScreen({ navigation }: any) {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.startButton, !allChecked && styles.startButtonDisabled]}
+          style={[styles.startButton, !canStart && styles.startButtonDisabled]}
           onPress={handleStart}
           activeOpacity={0.8}
-          disabled={!allChecked}
+          disabled={!canStart}
         >
           <Text style={styles.startButtonText}>
-            {allChecked ? "I'm ready, Start Scan" : 'Complete Checklist First'}
+            {!genderSelected ? 'Select Gender Above' : allChecked ? "I'm ready, Start Scan" : 'Complete Checklist First'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -184,6 +223,52 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     textAlign: 'center',
     marginBottom: 24,
+  },
+  genderSection: {
+    width: '100%',
+    marginBottom: 24,
+  },
+  genderLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 10,
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  genderButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    gap: 8,
+  },
+  genderButtonActive: {
+    borderColor: Colors.primary,
+    backgroundColor: '#E0F7F5',
+  },
+  genderEmoji: {
+    fontSize: 20,
+  },
+  genderText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  genderTextActive: {
+    color: Colors.primary,
+  },
+  genderHint: {
+    fontSize: 12,
+    color: Colors.error,
+    marginTop: 6,
   },
   progressRow: {
     flexDirection: 'row',
