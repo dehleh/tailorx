@@ -14,6 +14,8 @@ interface ShareModalProps {
   unit: 'cm' | 'inch';
 }
 
+const APP_DOWNLOAD_LINK = 'https://tailor-xfit.app/download';
+
 export default function ShareModal({ visible, onClose, measurementId, measurements, unit }: ShareModalProps) {
   const [email, setEmail] = useState('');
   const shareLink = `https://tailor-xfit.app/m/${measurementId.slice(0, 8)}`;
@@ -24,7 +26,7 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
   };
 
   const handleWhatsApp = async () => {
-    const message = `Check out my body measurements from Tailor-XFit!\n\n${formatMeasurements()}\n\nView in the app: ${shareLink}`;
+    const message = `Check out my body measurements from Tailor-XFit!\n\n${formatMeasurements()}\n\nView in the app: ${shareLink}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`;
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
     try {
       const canOpen = await Linking.canOpenURL(url);
@@ -40,7 +42,7 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
 
   const handleEmail = async () => {
     const subject = 'My Body Measurements - Tailor-XFit';
-    const body = `Here are my body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nDownload the app to view: ${shareLink}`;
+    const body = `Here are my body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nView in the app: ${shareLink}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`;
     
     if (email) {
       const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -54,7 +56,7 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
   const handleNativeShare = async () => {
     try {
       await Share.share({
-        message: `My body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nDownload the app: ${shareLink}`,
+        message: `My body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nView in the app: ${shareLink}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`,
         title: 'My Measurements',
       });
     } catch {
