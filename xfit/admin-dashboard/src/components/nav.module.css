@@ -1,0 +1,68 @@
+.nav {
+  display: flex;
+  align-items: center;
+  background: var(--brand);
+  padding: 0 1.5rem;
+  height: 56px;
+  gap: 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: 1rem;
+}
+
+.icon { color: var(--accent); font-size: 1.2rem; }
+.name { color: #fff; font-weight: 700; font-size: 1rem; white-space: nowrap; }
+
+.links { display: flex; gap: 1rem; flex: 1; }
+
+.link {
+  color: rgba(255,255,255,0.8);
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.link:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.roleTag {
+  background: var(--accent);
+  color: var(--brand);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.email {
+  color: rgba(255,255,255,0.7);
+  font-size: 0.85rem;
+}
+
+.logout {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.82rem;
+  transition: background 0.15s;
+}
+
+.logout:hover { background: rgba(255,255,255,0.22); }

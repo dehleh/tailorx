@@ -371,7 +371,7 @@ class PoseProcessor {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (attempt < this.cloudConfig.retries) {
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); // exponential backoff
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000 * (attempt + 1))); // exponential backoff
         }
       }
     }

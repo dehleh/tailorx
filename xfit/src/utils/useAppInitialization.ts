@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useUserStore } from '../stores/userStore';
 import { useAuthStore } from '../stores/authStore';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 
 /**
  * Custom hook to initialize app data on startup.
@@ -11,6 +12,7 @@ export const useAppInitialization = () => {
   const loadMeasurements = useMeasurementStore((state) => state.loadMeasurements);
   const loadUser = useUserStore((state) => state.loadUser);
   const loadAuth = useAuthStore((state) => state.loadAuth);
+  const loadEnterpriseContext = useEnterpriseStore((state) => state.loadContext);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -25,6 +27,9 @@ export const useAppInitialization = () => {
         
         // Load measurements from storage
         await loadMeasurements();
+
+        // Load enterprise workspace context
+        await loadEnterpriseContext();
         
         console.log('App initialization complete');
       } catch (error) {

@@ -29,7 +29,9 @@ import { measurementEngine, CaptureAngle, ContourData } from '../services/measur
 import { contourService } from '../services/contourService';
 import { productionImageValidation } from '../services/productionImageValidation';
 import { accuracyEngine } from '../services/accuracyEngine';
+import { enterpriseApi } from '../services/enterpriseApi';
 import { useMeasurementStore } from '../stores/measurementStore';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { useUserStore } from '../stores/userStore';
 import { BodyMeasurement } from '../types/measurements';
 
@@ -63,6 +65,8 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   const cameraRef = useRef<any>(null);
 
   const addMeasurement = useMeasurementStore((state) => state.addMeasurement);
+  const activeEnterpriseSessionId = useEnterpriseStore((state) => state.activeSessionId);
+  const clearActiveEnterpriseSession = useEnterpriseStore((state) => state.clearActiveSession);
   const user = useUserStore((state) => state.user);
 
   // Calibration passed from CalibrationScreen or route params
@@ -455,6 +459,23 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       };
 
       await addMeasurement(newMeasurement);
+
+      if (activeEnterpriseSessionId) {
+        try {
+          await enterpriseApi.completeSession(activeEnterpriseSessionId, {
+            measurementId: newMeasurement.id,
+            accuracyScore: result.overallAccuracy,
+            metadata: {
+              anglesUsed: result.metadata.anglesUsed,
+              calibrationMethod: result.metadata.calibrationMethod,
+              warnings: result.warnings,
+            },
+          });
+          await clearActiveEnterpriseSession();
+        } catch (enterpriseError) {
+          console.error('Enterprise session completion failed:', enterpriseError);
+        }
+      }
 
       if (__DEV__) {
         console.log('[ProcessMeasurements] Saved measurement values:', JSON.stringify(newMeasurement.measurements));

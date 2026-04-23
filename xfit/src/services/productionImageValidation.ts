@@ -339,7 +339,7 @@ class ProductionImageValidationService {
     }
 
     // Strategy 4: Wait briefly and retry — file may still be flushing to disk
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
     try {
       const info = await FileSystem.getInfoAsync(imageUri);
       if (info.exists) return success;
@@ -357,7 +357,7 @@ class ProductionImageValidationService {
 
     try {
       // Get file size
-      const info = await FileSystem.getInfoAsync(imageUri, { size: true });
+      const info = await FileSystem.getInfoAsync(imageUri);
       fileSize = (info as any).size || 0;
 
       // Get image dimensions

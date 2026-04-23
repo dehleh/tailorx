@@ -10,6 +10,8 @@ export type RootStackParamList = {
   GettingStarted: undefined;
   PrivacyConsent: undefined;
   MainTabs: undefined;
+  EnterpriseSetup: undefined;
+  EnterpriseInvite: undefined;
 };
 
 export type RootTabParamList = {

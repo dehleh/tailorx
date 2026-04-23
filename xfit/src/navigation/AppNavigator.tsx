@@ -21,6 +21,8 @@ import PrivacyConsentScreen from '../screens/PrivacyConsentScreen';
 import HomeScreen from '../screens/HomeScreen';
 import MeasurementsScreen from '../screens/MeasurementsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import EnterpriseSetupScreen from '../screens/EnterpriseSetupScreen';
+import EnterpriseInviteScreen from '../screens/EnterpriseInviteScreen';
 
 // Stack navigators
 import ScanStackNavigator from './ScanStackNavigator';
@@ -83,7 +85,11 @@ export default function AppNavigator() {
       <NavigationContainer>
         <RootStack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
           {isAuthenticated && isOnboarded ? (
-            <RootStack.Screen name="MainTabs" component={MainTabs} />
+            <>
+              <RootStack.Screen name="MainTabs" component={MainTabs} />
+              <RootStack.Screen name="EnterpriseSetup" component={EnterpriseSetupScreen} options={{ headerShown: true, title: 'Enterprise Setup' }} />
+              <RootStack.Screen name="EnterpriseInvite" component={EnterpriseInviteScreen} options={{ headerShown: true, title: 'Branded Scan' }} />
+            </>
           ) : (
             <>
               {!isAuthenticated ? (

@@ -10,13 +10,17 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { Colors } from '../constants/colors';
 import { useUserStore } from '../stores/userStore';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 
-export default function ProfileScreen() {
+const WEB_ADMIN_URL = 'https://admin.tailor-xfit.app';
+
+export default function ProfileScreen({ navigation }: any) {
   const user = useUserStore((state) => state.user);
   const loadUser = useUserStore((state) => state.loadUser);
   const setUser = useUserStore((state) => state.setUser);
@@ -25,6 +29,9 @@ export default function ProfileScreen() {
   const measurements = useMeasurementStore((state) => state.measurements);
   const authUser = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const organizationId = useEnterpriseStore((state) => state.organizationId);
+  const organizationName = useEnterpriseStore((state) => state.organizationName);
+  const clearEnterpriseContext = useEnterpriseStore((state) => state.clearContext);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editName, setEditName] = useState('');
@@ -105,6 +112,18 @@ export default function ProfileScreen() {
         },
       ]
     );
+  };
+
+  const openAdminPortal = async () => {
+    const url = organizationId
+      ? `${WEB_ADMIN_URL}/dashboard?org=${organizationId}`
+      : `${WEB_ADMIN_URL}/login`;
+
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Unable to open portal', `Open ${url} in your browser.`);
+    }
   };
 
   const displayName = authUser?.displayName || user?.name || 'Set Up Profile';
@@ -192,6 +211,32 @@ export default function ProfileScreen() {
           <Text style={styles.infoLabel}>Member Since</Text>
           <Text style={styles.infoValue}>{joinDate || '—'}</Text>
         </View>
+      </View>
+
+      <View style={styles.enterpriseSection}>
+        <Text style={styles.enterpriseSectionTitle}>Enterprise Tools</Text>
+        <TouchableOpacity style={styles.enterpriseButton} onPress={() => navigation.navigate('EnterpriseSetup')}>
+          <Text style={styles.enterpriseButtonText}>🏢 Create Enterprise Workspace</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.enterpriseButton} onPress={openAdminPortal}>
+          <Text style={styles.enterpriseButtonText}>
+            🌐 Open Admin Web Portal{organizationName ? ` (${organizationName})` : ''}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.enterpriseButton} onPress={() => navigation.navigate('EnterpriseInvite')}>
+          <Text style={styles.enterpriseButtonText}>🔗 Open Branded Invite Flow</Text>
+        </TouchableOpacity>
+        {organizationId ? (
+          <TouchableOpacity
+            style={styles.enterpriseResetButton}
+            onPress={async () => {
+              await clearEnterpriseContext();
+              Alert.alert('Enterprise context cleared', 'The active organization and invite session have been removed from this device.');
+            }}
+          >
+            <Text style={styles.enterpriseResetText}>Clear enterprise context</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Danger zone */}
@@ -438,8 +483,38 @@ const styles = StyleSheet.create({
   infoSection: {
     marginHorizontal: 20,
     marginBottom: 20,
+  },  enterpriseSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
   },
-  infoCard: {
+  enterpriseSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 12,
+  },
+  enterpriseButton: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  enterpriseButtonText: {
+    color: Colors.text.primary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  enterpriseResetButton: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  enterpriseResetText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+  },  infoCard: {
     backgroundColor: Colors.white,
     padding: 14,
     borderRadius: 12,

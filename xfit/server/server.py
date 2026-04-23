@@ -33,7 +33,11 @@ import time
 import os
 import logging
 import random
+import re
+import sqlite3
 import smtplib
+import secrets
+import uuid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional, Any
@@ -41,10 +45,15 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import requests as http_requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import mediapipe as mp
+import jwt as pyjwt
+import hmac
+import hashlib
+import json
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 from PIL import Image, ImageOps
@@ -83,6 +92,75 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 SMTP_USER = os.environ.get("SMTP_USER", "")       # e.g. your-email@gmail.com
 SMTP_PASS = os.environ.get("SMTP_PASS", "")       # Gmail App Password (not your login password)
 SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER)
+ENTERPRISE_DB_PATH = os.environ.get(
+    "ENTERPRISE_DB_PATH",
+    os.path.join(os.path.dirname(__file__), "enterprise.db"),
+)
+DEFAULT_BILLING_CURRENCY = os.environ.get("TAILORX_BILLING_CURRENCY", "NGN")
+
+# JWT config
+JWT_SECRET = os.environ.get("JWT_SECRET", "")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = int(os.environ.get("JWT_EXPIRY_HOURS", 72))
+if not JWT_SECRET:
+    JWT_SECRET = secrets.token_hex(32)
+    logger.warning(
+        "JWT_SECRET env var not set — generated an ephemeral secret. "
+        "All issued admin tokens will become invalid on restart. "
+        "Set JWT_SECRET in production."
+    )
+
+# Paystack config (https://paystack.com/docs/api/)
+PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
+PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
+PAYSTACK_PLAN_STARTER = os.environ.get("PAYSTACK_PLAN_STARTER", "")     # plan code e.g. PLN_xxx
+PAYSTACK_PLAN_GROWTH = os.environ.get("PAYSTACK_PLAN_GROWTH", "")
+PAYSTACK_PLAN_ENTERPRISE = os.environ.get("PAYSTACK_PLAN_ENTERPRISE", "")
+PAYSTACK_API_BASE = os.environ.get("PAYSTACK_API_BASE", "https://api.paystack.co")
+WEB_APP_URL = os.environ.get("WEB_APP_URL", "https://admin.tailor-xfit.app")
+OVERAGE_SCAN_PRICE = float(os.environ.get("TAILORX_OVERAGE_SCAN_PRICE", "500"))   # in major currency units
+OVERAGE_GRACE_SCANS = int(os.environ.get("TAILORX_OVERAGE_GRACE_SCANS", "25"))
+
+# CORS allowlist — comma-separated list of allowed origins. Defaults to web app + localhost dev.
+_default_origins = f"{WEB_APP_URL},http://localhost:3001,http://localhost:19006"
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("TAILORX_ALLOWED_ORIGINS", _default_origins).split(",")
+    if origin.strip()
+]
+
+if PAYSTACK_SECRET_KEY:
+    logger.info("Paystack configured")
+else:
+    logger.warning("PAYSTACK_SECRET_KEY not set — billing checkout will use mock fallback")
+
+# Map plan tier names to Paystack plan codes
+PAYSTACK_PLAN_MAP: dict[str, str] = {}
+if PAYSTACK_PLAN_STARTER:
+    PAYSTACK_PLAN_MAP["starter"] = PAYSTACK_PLAN_STARTER
+if PAYSTACK_PLAN_GROWTH:
+    PAYSTACK_PLAN_MAP["growth"] = PAYSTACK_PLAN_GROWTH
+if PAYSTACK_PLAN_ENTERPRISE:
+    PAYSTACK_PLAN_MAP["enterprise"] = PAYSTACK_PLAN_ENTERPRISE
+
+
+def _validate_production_env() -> None:
+    """Warn loudly if production-critical env vars are missing."""
+    missing: list[str] = []
+    if not os.environ.get("JWT_SECRET"):
+        missing.append("JWT_SECRET")
+    if not PAYSTACK_SECRET_KEY:
+        missing.append("PAYSTACK_SECRET_KEY")
+    if not (RESEND_API_KEY or SMTP_USER):
+        missing.append("RESEND_API_KEY or SMTP_USER")
+    if missing:
+        logger.warning(
+            "⚠️  Production readiness: missing env vars: %s",
+            ", ".join(missing),
+        )
+
+
+_validate_production_env()
 
 # Log email config at startup
 if RESEND_API_KEY:
@@ -139,6 +217,62 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     version: str
 
+
+class EnterpriseBootstrapRequest(BaseModel):
+    organizationName: str
+    adminName: str
+    adminEmail: str
+    seats: int = 10
+    scanQuota: int = 500
+    brandName: Optional[str] = None
+    primaryColor: str = "#0F2B3C"
+    imprint: Optional[str] = None
+
+
+class EnterpriseInviteRequest(BaseModel):
+    label: str
+    campaignName: Optional[str] = None
+    imprint: Optional[str] = None
+    primaryColor: Optional[str] = None
+    landingHeadline: Optional[str] = None
+
+
+class EnterpriseSessionStartRequest(BaseModel):
+    customerName: str
+    customerEmail: str
+    customerPhone: Optional[str] = None
+    source: str = "invite_link"
+
+
+class EnterpriseSessionCompleteRequest(BaseModel):
+    measurementId: Optional[str] = None
+    accuracyScore: Optional[float] = None
+    metadata: Optional[dict[str, Any]] = None
+
+
+class BillingCheckoutRequest(BaseModel):
+    organizationId: str
+    licenseId: str
+    amount: float
+    currency: str = DEFAULT_BILLING_CURRENCY
+    billingInterval: str = "annual"
+    planTier: str = "growth"   # starter | growth | enterprise
+
+
+class AdminLoginRequest(BaseModel):
+    email: str
+
+
+class AdminOTPVerifyRequest(BaseModel):
+    email: str
+    code: str
+
+
+class InviteStaffRequest(BaseModel):
+    name: str
+    email: str
+    role: str = "staff"   # org_admin | staff
+
 # ============================================================
 # BLAZEPOSE LANDMARK NAMES (33 total)
 # ============================================================
@@ -167,9 +301,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "x-paystack-signature"],
 )
 
 # ============================================================
@@ -308,6 +443,459 @@ def verify_api_key(authorization: str | None) -> bool:
     token = authorization.replace("Bearer ", "")
     return token == API_KEY
 
+
+def _enterprise_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(ENTERPRISE_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _enterprise_now() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
+    return slug or f"org-{secrets.token_hex(3)}"
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+    columns = {row['name'] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+    if column_name not in columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+
+
+def init_enterprise_db() -> None:
+    conn = _enterprise_connection()
+    try:
+        conn.executescript(
+            """
+            PRAGMA foreign_keys = ON;
+
+            CREATE TABLE IF NOT EXISTS organizations (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                slug TEXT NOT NULL UNIQUE,
+                brand_name TEXT NOT NULL,
+                primary_color TEXT NOT NULL,
+                imprint TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS organization_users (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                role TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS licenses (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                seats_purchased INTEGER NOT NULL,
+                scan_quota INTEGER NOT NULL,
+                scans_used INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                billing_interval TEXT NOT NULL DEFAULT 'annual',
+                amount REAL NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                starts_at TEXT NOT NULL,
+                ends_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS customers (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                invite_link_id TEXT,
+                full_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE (organization_id, email),
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS invite_links (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                code TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                campaign_name TEXT,
+                imprint TEXT,
+                primary_color TEXT,
+                landing_headline TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_by_user_id TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by_user_id) REFERENCES organization_users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS measurement_sessions (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                customer_id TEXT NOT NULL,
+                invite_link_id TEXT,
+                measurement_id TEXT,
+                source TEXT NOT NULL DEFAULT 'invite_link',
+                status TEXT NOT NULL DEFAULT 'started',
+                accuracy_score REAL,
+                metadata_json TEXT,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+                FOREIGN KEY (invite_link_id) REFERENCES invite_links(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS billing_records (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                license_id TEXT NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                billing_interval TEXT NOT NULL,
+                checkout_url TEXT NOT NULL,
+                external_reference TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+                FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE
+            );
+            """
+        )
+        _ensure_column(conn, 'billing_records', 'paystack_customer_code', 'TEXT')
+        _ensure_column(conn, 'billing_records', 'paystack_subscription_code', 'TEXT')
+        _ensure_column(conn, 'billing_records', 'paystack_reference', 'TEXT')
+        _ensure_column(conn, 'billing_records', 'overage_units', 'INTEGER NOT NULL DEFAULT 0')
+        _ensure_column(conn, 'billing_records', 'overage_unit_amount', 'REAL NOT NULL DEFAULT 0')
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_org_or_404(conn: sqlite3.Connection, organization_id: str) -> sqlite3.Row:
+    organization = conn.execute(
+        "SELECT * FROM organizations WHERE id = ?",
+        (organization_id,),
+    ).fetchone()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return organization
+
+
+def _get_license_for_org(conn: sqlite3.Connection, organization_id: str) -> sqlite3.Row:
+    license_row = conn.execute(
+        "SELECT * FROM licenses WHERE organization_id = ? ORDER BY created_at DESC LIMIT 1",
+        (organization_id,),
+    ).fetchone()
+    if not license_row:
+        raise HTTPException(status_code=404, detail="License not found")
+    return license_row
+
+
+def _remaining_quota(license_row: sqlite3.Row) -> int:
+    return max(license_row["scan_quota"] - license_row["scans_used"], 0)
+
+
+
+def _overage_units(license_row: sqlite3.Row) -> int:
+    return max(license_row["scans_used"] - license_row["scan_quota"], 0)
+
+
+
+def _can_consume_scan(license_row: sqlite3.Row) -> bool:
+    return license_row["status"] == 'active' and _overage_units(license_row) < OVERAGE_GRACE_SCANS
+
+
+
+def _sync_overage_record(conn: sqlite3.Connection, organization_id: str, license_id: str, license_row: sqlite3.Row) -> None:
+    overage_units = _overage_units(license_row)
+    if overage_units <= 0:
+        return
+
+    amount = round(overage_units * OVERAGE_SCAN_PRICE, 2)
+    existing = conn.execute(
+        """
+        SELECT * FROM billing_records
+        WHERE organization_id = ? AND license_id = ? AND billing_interval = 'overage' AND status IN ('pending', 'paid')
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (organization_id, license_id),
+    ).fetchone()
+
+    if existing and existing['status'] == 'pending':
+        conn.execute(
+            """
+            UPDATE billing_records
+            SET amount = ?, overage_units = ?, overage_unit_amount = ?
+            WHERE id = ?
+            """,
+            (amount, overage_units, OVERAGE_SCAN_PRICE, existing['id']),
+        )
+        return
+
+    conn.execute(
+        """
+        INSERT INTO billing_records (
+            id, organization_id, license_id, amount, currency, status, billing_interval,
+            checkout_url, external_reference, created_at, overage_units, overage_unit_amount
+        ) VALUES (?, ?, ?, ?, ?, 'pending', 'overage', ?, ?, ?, ?, ?)
+        """,
+        (
+            _new_id('bill'),
+            organization_id,
+            license_id,
+            amount,
+            license_row['currency'],
+            f"{WEB_APP_URL}/dashboard?org={organization_id}&billing=overage",
+            f"overage_{license_id}",
+            _enterprise_now(),
+            overage_units,
+            OVERAGE_SCAN_PRICE,
+        ),
+    )
+
+
+
+def _build_checkout_url(organization_id: str, license_id: str) -> str:
+    # Replaced by Paystack initialize — kept for bootstrap response back-compat.
+    return f"{WEB_APP_URL}/billing?org={organization_id}&lic={license_id}"
+
+
+def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> dict[str, Any]:
+    organization = _get_org_or_404(conn, organization_id)
+    license_row = _get_license_for_org(conn, organization_id)
+    staff_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM organization_users WHERE organization_id = ?",
+        (organization_id,),
+    ).fetchone()["count"]
+    customer_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM customers WHERE organization_id = ?",
+        (organization_id,),
+    ).fetchone()["count"]
+    session_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM measurement_sessions WHERE organization_id = ?",
+        (organization_id,),
+    ).fetchone()["count"]
+    recent_sessions = conn.execute(
+        """
+        SELECT ms.id, ms.status, ms.started_at, ms.completed_at, ms.accuracy_score,
+               c.full_name AS customer_name, c.email AS customer_email,
+               il.code AS invite_code, il.label AS invite_label
+        FROM measurement_sessions ms
+        JOIN customers c ON c.id = ms.customer_id
+        LEFT JOIN invite_links il ON il.id = ms.invite_link_id
+        WHERE ms.organization_id = ?
+        ORDER BY ms.started_at DESC
+        LIMIT 10
+        """,
+        (organization_id,),
+    ).fetchall()
+    invite_links = conn.execute(
+        """
+        SELECT id, code, label, campaign_name, imprint, primary_color, landing_headline, status, created_at
+        FROM invite_links
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 10
+        """,
+        (organization_id,),
+    ).fetchall()
+
+    return {
+        "organization": {
+            "id": organization["id"],
+            "name": organization["name"],
+            "slug": organization["slug"],
+            "brandName": organization["brand_name"],
+            "primaryColor": organization["primary_color"],
+            "imprint": organization["imprint"],
+            "status": organization["status"],
+            "createdAt": organization["created_at"],
+        },
+        "license": {
+            "id": license_row["id"],
+            "seatsPurchased": license_row["seats_purchased"],
+            "scanQuota": license_row["scan_quota"],
+            "scansUsed": license_row["scans_used"],
+            "remainingQuota": _remaining_quota(license_row),
+            "overageUnits": _overage_units(license_row),
+            "overageGraceScans": OVERAGE_GRACE_SCANS,
+            "status": license_row["status"],
+            "billingInterval": license_row["billing_interval"],
+            "amount": license_row["amount"],
+            "currency": license_row["currency"],
+            "startsAt": license_row["starts_at"],
+            "endsAt": license_row["ends_at"],
+        },
+        "metrics": {
+            "staffCount": staff_count,
+            "customerCount": customer_count,
+            "sessionCount": session_count,
+        },
+        "recentSessions": [dict(row) for row in recent_sessions],
+        "inviteLinks": [
+            {
+                **dict(row),
+                "publicUrl": f"https://tailor-xfit.app/invite/{row['code']}",
+            }
+            for row in invite_links
+        ],
+    }
+
+
+init_enterprise_db()
+
+# ============================================================
+# JWT / AUTH HELPERS
+# ============================================================
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def _issue_jwt(payload: dict, expiry_hours: int = JWT_EXPIRY_HOURS) -> str:
+    data = dict(payload)
+    data["exp"] = datetime.utcnow() + timedelta(hours=expiry_hours)
+    data["iat"] = datetime.utcnow()
+    return pyjwt.encode(data, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _decode_jwt(token: str) -> dict:
+    try:
+        return pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def _get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> dict:
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Authorization required")
+    return _decode_jwt(credentials.credentials)
+
+
+def _require_role(*allowed_roles: str):
+    """Factory that returns a FastAPI dependency checking the JWT role."""
+    def _dep(user: dict = Depends(_get_current_user)) -> dict:
+        if user.get("role") not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Role '{user.get('role')}' is not allowed. Required: {list(allowed_roles)}",
+            )
+        return user
+    return _dep
+
+
+def _require_org_access(organization_id: str, user: dict) -> None:
+    """Verify the JWT user can access the given organization."""
+    if user.get("role") == "super_admin":
+        return  # Super admins can access everything
+    if user.get("organization_id") != organization_id:
+        raise HTTPException(status_code=403, detail="Access denied for this organization")
+
+
+# ============================================================
+# PAYSTACK HELPERS
+# ============================================================
+
+def _paystack_request(method: str, path: str, payload: Optional[dict] = None) -> dict:
+    """Call the Paystack REST API."""
+    url = f"{PAYSTACK_API_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+    response = http_requests.request(method, url, headers=headers, json=payload, timeout=15)
+    try:
+        body = response.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail=f"Paystack returned non-JSON ({response.status_code})")
+    if not response.ok or not body.get("status", False):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Paystack error: {body.get('message', 'unknown')}",
+        )
+    return body.get("data", {})
+
+
+def _paystack_initialize_transaction(
+    org_id: str,
+    license_id: str,
+    plan_tier: str,
+    amount: float,
+    currency: str,
+    customer_email: str,
+) -> dict:
+    """Initialize a Paystack transaction and return the authorization URL + reference.
+
+    Falls back to a mock transaction when Paystack is not configured (dev mode).
+    """
+    if not PAYSTACK_SECRET_KEY:
+        ref = f"mock_{secrets.token_hex(10)}"
+        return {
+            "reference": ref,
+            "checkoutUrl": f"{WEB_APP_URL}/billing/success?org={org_id}&lic={license_id}&ref={ref}",
+            "provider": "mock",
+        }
+
+    plan_code = PAYSTACK_PLAN_MAP.get(plan_tier)
+    reference = f"tlx_{secrets.token_hex(8)}"
+    payload: dict[str, Any] = {
+        "email": customer_email or f"billing+{org_id}@tailor-xfit.app",
+        # Paystack expects amounts in the lowest currency unit (kobo, cents, pesewas)
+        "amount": int(round(amount * 100)),
+        "currency": currency.upper(),
+        "reference": reference,
+        "callback_url": f"{WEB_APP_URL}/dashboard?org={org_id}&billing=success",
+        "metadata": {
+            "org_id": org_id,
+            "license_id": license_id,
+            "plan_tier": plan_tier,
+        },
+    }
+    if plan_code:
+        payload["plan"] = plan_code  # subscription mode
+
+    data = _paystack_request("POST", "/transaction/initialize", payload)
+    return {
+        "reference": data.get("reference", reference),
+        "checkoutUrl": data.get("authorization_url"),
+        "accessCode": data.get("access_code"),
+        "provider": "paystack",
+    }
+
+
+def _paystack_verify_signature(payload: bytes, signature: str) -> bool:
+    """Verify a Paystack webhook signature (HMAC-SHA512 over the raw body)."""
+    if not PAYSTACK_SECRET_KEY:
+        return True  # dev mode: skip
+    if not signature:
+        return False
+    expected = hmac.new(
+        PAYSTACK_SECRET_KEY.encode("utf-8"),
+        msg=payload,
+        digestmod=hashlib.sha512,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
 # ============================================================
 # ENDPOINTS
 # ============================================================
@@ -320,6 +908,653 @@ async def health():
         model_loaded=_detector is not None,
         version="2.0.0",
     )
+
+
+@app.post("/v1/enterprise/bootstrap")
+async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
+    now = _enterprise_now()
+    organization_id = _new_id("org")
+    organization_slug = _slugify(request.organizationName)
+    admin_user_id = _new_id("user")
+    license_id = _new_id("lic")
+    invite_id = _new_id("inv")
+    invite_code = f"{organization_slug}-{secrets.token_hex(3)}"
+
+    conn = _enterprise_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO organizations (id, name, slug, brand_name, primary_color, imprint, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+            """,
+            (
+                organization_id,
+                request.organizationName,
+                organization_slug,
+                request.brandName or request.organizationName,
+                request.primaryColor,
+                request.imprint,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO organization_users (id, organization_id, name, email, role, status, created_at)
+            VALUES (?, ?, ?, ?, 'org_owner', 'active', ?)
+            """,
+            (admin_user_id, organization_id, request.adminName, request.adminEmail.strip().lower(), now),
+        )
+        conn.execute(
+            """
+            INSERT INTO licenses (
+                id, organization_id, seats_purchased, scan_quota, scans_used, status,
+                billing_interval, amount, currency, starts_at, ends_at, created_at
+            )
+            VALUES (?, ?, ?, ?, 0, 'active', 'annual', ?, ?, ?, ?, ?)
+            """,
+            (
+                license_id,
+                organization_id,
+                request.seats,
+                request.scanQuota,
+                max(request.scanQuota * 0.35, 99),
+                DEFAULT_BILLING_CURRENCY,
+                now,
+                (datetime.utcnow() + timedelta(days=365)).isoformat() + "Z",
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO invite_links (
+                id, organization_id, code, label, campaign_name, imprint, primary_color,
+                landing_headline, status, created_by_user_id, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            """,
+            (
+                invite_id,
+                organization_id,
+                invite_code,
+                "Default customer invite",
+                "Launch campaign",
+                request.imprint or request.organizationName,
+                request.primaryColor,
+                f"Scan your measurements for {request.brandName or request.organizationName}",
+                admin_user_id,
+                now,
+            ),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=f"Enterprise setup conflict: {exc}") from exc
+    finally:
+        conn.close()
+
+    return {
+        "organizationId": organization_id,
+        "adminUserId": admin_user_id,
+        "licenseId": license_id,
+        "defaultInviteCode": invite_code,
+        "billingCheckoutUrl": _build_checkout_url(organization_id, license_id),
+    }
+
+
+@app.get("/v1/enterprise/organizations/{organization_id}/dashboard")
+async def get_organization_dashboard(
+    organization_id: str,
+    user: dict = Depends(_require_role("org_owner", "org_admin", "super_admin")),
+):
+    _require_org_access(organization_id, user)
+    conn = _enterprise_connection()
+    try:
+        return _serialize_org_dashboard(conn, organization_id)
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/organizations/{organization_id}/invite-links")
+async def create_invite_link(
+    organization_id: str,
+    request: EnterpriseInviteRequest,
+    user: dict = Depends(_require_role("org_owner", "org_admin", "super_admin")),
+):
+    now = _enterprise_now()
+    conn = _enterprise_connection()
+    try:
+        organization = _get_org_or_404(conn, organization_id)
+        _require_org_access(organization_id, user)
+        invite_id = _new_id("inv")
+        invite_code = f"{organization['slug']}-{secrets.token_hex(3)}"
+        conn.execute(
+            """
+            INSERT INTO invite_links (
+                id, organization_id, code, label, campaign_name, imprint, primary_color,
+                landing_headline, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+            """,
+            (
+                invite_id,
+                organization_id,
+                invite_code,
+                request.label,
+                request.campaignName,
+                request.imprint or organization["imprint"],
+                request.primaryColor or organization["primary_color"],
+                request.landingHeadline or f"Scan your measurements for {organization['brand_name']}",
+                now,
+            ),
+        )
+        conn.commit()
+        return {
+            "id": invite_id,
+            "code": invite_code,
+            "publicUrl": f"https://tailor-xfit.app/invite/{invite_code}",
+            "label": request.label,
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/v1/enterprise/invite/{invite_code}")
+async def get_invite_link(invite_code: str):
+    conn = _enterprise_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT il.*, o.name AS organization_name, o.brand_name, o.primary_color AS org_primary_color,
+                   o.imprint AS organization_imprint
+            FROM invite_links il
+            JOIN organizations o ON o.id = il.organization_id
+            WHERE il.code = ? AND il.status = 'active'
+            """,
+            (invite_code,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Invite link not found")
+        license_row = _get_license_for_org(conn, row["organization_id"])
+        return {
+            "invite": dict(row),
+            "organization": {
+                "id": row["organization_id"],
+                "name": row["organization_name"],
+                "brandName": row["brand_name"],
+                "primaryColor": row["primary_color"] or row["org_primary_color"],
+                "imprint": row["imprint"] or row["organization_imprint"],
+            },
+            "quota": {
+                "scanQuota": license_row["scan_quota"],
+                "scansUsed": license_row["scans_used"],
+                "remainingQuota": _remaining_quota(license_row),
+                "overageUnits": _overage_units(license_row),
+                "overageGraceScans": OVERAGE_GRACE_SCANS,
+                "canStartSession": _can_consume_scan(license_row),
+            },
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/invite/{invite_code}/start-session")
+async def start_enterprise_session(invite_code: str, request: EnterpriseSessionStartRequest):
+    conn = _enterprise_connection()
+    now = _enterprise_now()
+    try:
+        invite = conn.execute(
+            "SELECT * FROM invite_links WHERE code = ? AND status = 'active'",
+            (invite_code,),
+        ).fetchone()
+        if not invite:
+            raise HTTPException(status_code=404, detail="Invite link not found")
+
+        license_row = _get_license_for_org(conn, invite["organization_id"])
+        if license_row["status"] != "active":
+            raise HTTPException(status_code=403, detail="Organization license is not active")
+        if not _can_consume_scan(license_row):
+            raise HTTPException(status_code=403, detail="Scan quota exhausted and overage grace limit reached")
+
+        customer_email = request.customerEmail.strip().lower()
+        customer = conn.execute(
+            "SELECT * FROM customers WHERE organization_id = ? AND email = ?",
+            (invite["organization_id"], customer_email),
+        ).fetchone()
+        if customer is None:
+            customer_id = _new_id("cust")
+            conn.execute(
+                """
+                INSERT INTO customers (id, organization_id, invite_link_id, full_name, email, phone, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    customer_id,
+                    invite["organization_id"],
+                    invite["id"],
+                    request.customerName,
+                    customer_email,
+                    request.customerPhone,
+                    now,
+                ),
+            )
+        else:
+            customer_id = customer["id"]
+
+        session_id = _new_id("sess")
+        conn.execute(
+            """
+            INSERT INTO measurement_sessions (
+                id, organization_id, customer_id, invite_link_id, source, status, started_at
+            ) VALUES (?, ?, ?, ?, ?, 'started', ?)
+            """,
+            (session_id, invite["organization_id"], customer_id, invite["id"], request.source, now),
+        )
+        conn.commit()
+        return {
+            "sessionId": session_id,
+            "organizationId": invite["organization_id"],
+            "customerId": customer_id,
+            "remainingQuota": _remaining_quota(license_row),
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/sessions/{session_id}/complete")
+async def complete_enterprise_session(session_id: str, request: EnterpriseSessionCompleteRequest):
+    conn = _enterprise_connection()
+    now = _enterprise_now()
+    try:
+        session = conn.execute(
+            "SELECT * FROM measurement_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if session["status"] == "completed":
+            return {"sessionId": session_id, "status": "completed"}
+
+        license_row = _get_license_for_org(conn, session["organization_id"])
+        if not _can_consume_scan(license_row):
+            raise HTTPException(status_code=403, detail="Scan quota exhausted and overage grace limit reached")
+
+        conn.execute(
+            """
+            UPDATE measurement_sessions
+            SET status = 'completed', measurement_id = ?, accuracy_score = ?, metadata_json = ?, completed_at = ?
+            WHERE id = ?
+            """,
+            (
+                request.measurementId,
+                request.accuracyScore,
+                str(request.metadata or {}),
+                now,
+                session_id,
+            ),
+        )
+        conn.execute(
+            "UPDATE licenses SET scans_used = scans_used + 1 WHERE id = ?",
+            (license_row["id"],),
+        )
+        refreshed_license = _get_license_for_org(conn, session["organization_id"])
+        _sync_overage_record(conn, session["organization_id"], refreshed_license["id"], refreshed_license)
+        conn.commit()
+        return {
+            "sessionId": session_id,
+            "status": "completed",
+            "scansUsed": refreshed_license["scans_used"],
+            "remainingQuota": _remaining_quota(refreshed_license),
+            "overageUnits": _overage_units(refreshed_license),
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/billing/checkout")
+async def create_billing_checkout(
+    request: BillingCheckoutRequest,
+    user: dict = Depends(_require_role("org_owner", "org_admin", "super_admin")),
+):
+    _require_org_access(request.organizationId, user)
+    conn = _enterprise_connection()
+    now = _enterprise_now()
+    try:
+        _get_org_or_404(conn, request.organizationId)
+        admin_row = conn.execute(
+            "SELECT email FROM organization_users WHERE organization_id = ? ORDER BY created_at LIMIT 1",
+            (request.organizationId,),
+        ).fetchone()
+        customer_email = admin_row["email"] if admin_row else ""
+
+        result = _paystack_initialize_transaction(
+            org_id=request.organizationId,
+            license_id=request.licenseId,
+            plan_tier=request.planTier,
+            amount=request.amount,
+            currency=request.currency,
+            customer_email=customer_email,
+        )
+        record_id = _new_id("bill")
+        conn.execute(
+            """
+            INSERT INTO billing_records (
+                id, organization_id, license_id, amount, currency, status,
+                billing_interval, checkout_url, external_reference, created_at, paystack_reference
+            ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                request.organizationId,
+                request.licenseId,
+                request.amount,
+                request.currency,
+                request.billingInterval,
+                result["checkoutUrl"],
+                result["reference"],
+                now,
+                result["reference"],
+            ),
+        )
+        conn.commit()
+        return {
+            "billingRecordId": record_id,
+            "checkoutUrl": result["checkoutUrl"],
+            "paystackReference": result["reference"],
+            "provider": result["provider"],
+            "status": "pending",
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/v1/billing/webhook")
+async def paystack_webhook(request: Request):
+    """Paystack webhook — handles transactions, subscriptions, and renewals.
+
+    Paystack signs the raw request body with HMAC-SHA512 using the secret key,
+    in the `x-paystack-signature` header.
+    """
+    payload = await request.body()
+    signature = request.headers.get("x-paystack-signature", "")
+
+    if not _paystack_verify_signature(payload, signature):
+        raise HTTPException(status_code=400, detail="Invalid Paystack signature")
+
+    try:
+        event = json.loads(payload.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    event_type = event.get("event", "")
+    data_obj = event.get("data", {}) or {}
+    metadata = data_obj.get("metadata") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except ValueError:
+            metadata = {}
+    org_id = metadata.get("org_id", "")
+    license_id = metadata.get("license_id", "")
+    reference = data_obj.get("reference", "")
+    customer_obj = data_obj.get("customer") or {}
+    customer_code = customer_obj.get("customer_code", "")
+    subscription_code = data_obj.get("subscription_code") or data_obj.get("plan", {}).get("subscription_code", "") if isinstance(data_obj.get("plan"), dict) else data_obj.get("subscription_code", "")
+
+    conn = _enterprise_connection()
+    try:
+        if event_type == "charge.success":
+            # Payment confirmed — mark billing record paid + activate license
+            conn.execute(
+                """
+                UPDATE billing_records
+                SET status='paid', paystack_customer_code=?, paystack_subscription_code=?
+                WHERE paystack_reference=? OR external_reference=?
+                """,
+                (customer_code, subscription_code, reference, reference),
+            )
+            target_license_id = license_id
+            if not target_license_id and reference:
+                row = conn.execute(
+                    "SELECT license_id FROM billing_records WHERE paystack_reference=? OR external_reference=?",
+                    (reference, reference),
+                ).fetchone()
+                if row:
+                    target_license_id = row["license_id"]
+            if target_license_id:
+                conn.execute(
+                    "UPDATE licenses SET status='active', ends_at=? WHERE id=?",
+                    ((datetime.utcnow() + timedelta(days=365)).isoformat() + "Z", target_license_id),
+                )
+            conn.commit()
+
+        elif event_type == "subscription.create":
+            # New subscription created
+            sub_code = data_obj.get("subscription_code", "")
+            if sub_code and reference:
+                conn.execute(
+                    "UPDATE billing_records SET paystack_subscription_code=?, paystack_customer_code=? WHERE paystack_reference=?",
+                    (sub_code, customer_code, reference),
+                )
+                conn.commit()
+
+        elif event_type == "invoice.create":
+            # Renewal invoice created — mark license active
+            sub_code = data_obj.get("subscription", {}).get("subscription_code", "") if isinstance(data_obj.get("subscription"), dict) else data_obj.get("subscription_code", "")
+            if sub_code and org_id:
+                conn.execute(
+                    "UPDATE licenses SET status='active', ends_at=? WHERE organization_id=? AND status!='cancelled'",
+                    ((datetime.utcnow() + timedelta(days=365)).isoformat() + "Z", org_id),
+                )
+                conn.commit()
+
+        elif event_type == "invoice.payment_failed":
+            sub_code = data_obj.get("subscription", {}).get("subscription_code", "") if isinstance(data_obj.get("subscription"), dict) else data_obj.get("subscription_code", "")
+            target_org = org_id
+            if not target_org and sub_code:
+                row = conn.execute(
+                    "SELECT organization_id FROM billing_records WHERE paystack_subscription_code=? LIMIT 1",
+                    (sub_code,),
+                ).fetchone()
+                if row:
+                    target_org = row["organization_id"]
+            if target_org:
+                conn.execute(
+                    "UPDATE licenses SET status='past_due' WHERE organization_id=? AND status='active'",
+                    (target_org,),
+                )
+                conn.commit()
+
+        elif event_type in ("subscription.disable", "subscription.not_renew"):
+            sub_code = data_obj.get("subscription_code", "")
+            target_org = org_id
+            if not target_org and sub_code:
+                row = conn.execute(
+                    "SELECT organization_id FROM billing_records WHERE paystack_subscription_code=? LIMIT 1",
+                    (sub_code,),
+                ).fetchone()
+                if row:
+                    target_org = row["organization_id"]
+            if target_org:
+                conn.execute(
+                    "UPDATE licenses SET status='cancelled' WHERE organization_id=? AND status='active'",
+                    (target_org,),
+                )
+                conn.commit()
+
+    finally:
+        conn.close()
+
+    return {"received": True, "event": event_type}
+
+
+# ============================================================
+# AUTH ENDPOINTS (JWT-based, used by web admin app)
+# ============================================================
+
+@app.post("/v1/auth/admin/send-otp")
+async def admin_send_otp(request: AdminLoginRequest):
+    """Send a login OTP to an admin or super_admin email."""
+    email = request.email.strip().lower()
+    conn = _enterprise_connection()
+    try:
+        user_row = conn.execute(
+            "SELECT * FROM organization_users WHERE email = ? AND role IN ('org_owner','org_admin','super_admin') AND status = 'active'",
+            (email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not user_row:
+        # Security: don't reveal if email exists, but still return 200
+        return {"sent": True}
+
+    code = str(random.randint(100000, 999999))
+    _otp_store[email] = {"code": code, "expires_at": datetime.utcnow() + timedelta(minutes=10)}
+    html = (
+        f"<p>Your Tailor-X admin login code is:</p>"
+        f"<h2 style='font-family:monospace;letter-spacing:4px'>{code}</h2>"
+        f"<p>This code expires in 10 minutes.</p>"
+    )
+    try:
+        _send_email(email, "Your Tailor-X admin login code", html)
+    except Exception as exc:  # don't leak email-send failures to caller
+        print(f"[admin_send_otp] email send failed for {email}: {exc}")
+    return {"sent": True}
+
+
+@app.post("/v1/auth/admin/verify-otp")
+async def admin_verify_otp(request: AdminOTPVerifyRequest):
+    """Verify OTP and return a signed JWT with role + org claims."""
+    email = request.email.strip().lower()
+    entry = _otp_store.get(email)
+    if not entry or entry["code"] != request.code.strip():
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    if datetime.utcnow() > entry["expires_at"]:
+        del _otp_store[email]
+        raise HTTPException(status_code=400, detail="OTP expired")
+    del _otp_store[email]
+
+    conn = _enterprise_connection()
+    try:
+        user_row = conn.execute(
+            "SELECT * FROM organization_users WHERE email = ? AND status = 'active'",
+            (email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not user_row:
+        raise HTTPException(status_code=403, detail="User not found or inactive")
+
+    token = _issue_jwt({
+        "sub": user_row["id"],
+        "email": email,
+        "role": user_row["role"],
+        "organization_id": user_row["organization_id"],
+        "name": user_row["name"],
+    })
+    return {
+        "token": token,
+        "role": user_row["role"],
+        "organizationId": user_row["organization_id"],
+        "name": user_row["name"],
+        "email": email,
+    }
+
+
+@app.post("/v1/auth/admin/provision-super-admin")
+async def provision_super_admin(request: AdminLoginRequest):
+    """One-time endpoint to provision the first super_admin (only works if none exist)."""
+    conn = _enterprise_connection()
+    try:
+        existing = conn.execute(
+            "SELECT COUNT(*) AS c FROM organization_users WHERE role='super_admin'"
+        ).fetchone()["c"]
+        if existing > 0:
+            raise HTTPException(status_code=409, detail="Super admin already provisioned")
+        sa_id = _new_id("user")
+        conn.execute(
+            "INSERT INTO organization_users (id, organization_id, name, email, role, status, created_at) VALUES (?,NULL,'Super Admin',?,'super_admin','active',?)",
+            (sa_id, request.email.strip().lower(), _enterprise_now()),
+        )
+        conn.commit()
+        return {"created": True, "id": sa_id}
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/organizations/{organization_id}/staff")
+async def invite_staff(
+    organization_id: str,
+    request: InviteStaffRequest,
+    user: dict = Depends(_require_role("org_owner", "org_admin", "super_admin")),
+):
+    """Add a staff or org_admin user to the organization."""
+    _require_org_access(organization_id, user)
+    if request.role not in ("org_admin", "staff"):
+        raise HTTPException(status_code=400, detail="role must be org_admin or staff")
+    conn = _enterprise_connection()
+    now = _enterprise_now()
+    try:
+        _get_org_or_404(conn, organization_id)
+        uid = _new_id("user")
+        try:
+            conn.execute(
+                "INSERT INTO organization_users (id, organization_id, name, email, role, status, created_at) VALUES (?,?,?,?,?,?,?)",
+                (uid, organization_id, request.name, request.email.strip().lower(), request.role, "active", now),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="Email already registered")
+        return {"id": uid, "role": request.role, "email": request.email.strip().lower()}
+    finally:
+        conn.close()
+
+
+@app.get("/v1/enterprise/super-admin/dashboard")
+async def get_super_admin_dashboard(
+    user: dict = Depends(_require_role("super_admin")),
+):
+    conn = _enterprise_connection()
+    try:
+        organization_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM organizations"
+        ).fetchone()["count"]
+        active_license_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM licenses WHERE status = 'active'"
+        ).fetchone()["count"]
+        total_quota = conn.execute(
+            "SELECT COALESCE(SUM(scan_quota), 0) AS total FROM licenses"
+        ).fetchone()["total"]
+        total_used = conn.execute(
+            "SELECT COALESCE(SUM(scans_used), 0) AS total FROM licenses"
+        ).fetchone()["total"]
+        monthly_revenue = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) AS total FROM billing_records WHERE status IN ('pending', 'paid')"
+        ).fetchone()["total"]
+        organizations = conn.execute(
+            """
+            SELECT o.id, o.name, o.slug, o.brand_name, o.status, o.created_at,
+                   l.seats_purchased, l.scan_quota, l.scans_used, l.amount, l.currency
+            FROM organizations o
+            LEFT JOIN licenses l ON l.organization_id = o.id
+            ORDER BY o.created_at DESC
+            LIMIT 20
+            """
+        ).fetchall()
+        return {
+            "summary": {
+                "organizationCount": organization_count,
+                "activeLicenseCount": active_license_count,
+                "totalScanQuota": total_quota,
+                "totalScansUsed": total_used,
+                "utilizationRate": round((total_used / total_quota) * 100, 2) if total_quota else 0,
+                "bookedRevenue": monthly_revenue,
+            },
+            "organizations": [dict(row) for row in organizations],
+        }
+    finally:
+        conn.close()
 
 @app.post("/v1/pose/detect", response_model=PoseResponse)
 async def detect_pose(

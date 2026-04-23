@@ -8,5 +8,5 @@
     "moduleResolution": "bundler",
     "types": ["jest"]
   },
-  "exclude": ["node_modules", "server"]
+  "exclude": ["node_modules", "server", "admin-dashboard"]
 }

@@ -3,11 +3,14 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { Colors } from '../constants/colors';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { formatMeasurement, timeAgo } from '../utils/helpers';
 
 export default function HomeScreen({ navigation }: any) {
   const measurements = useMeasurementStore((s) => s.measurements);
   const authUser = useAuthStore((s) => s.user);
+  const activeInviteCode = useEnterpriseStore((s) => s.activeInviteCode);
+  const activeOrganizationName = useEnterpriseStore((s) => s.organizationName);
   const displayName = authUser?.displayName || 'User';
   const latestMeasurements = measurements.slice(-3).reverse();
 
@@ -45,6 +48,20 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={styles.scanCardButtonText}>Begin Scanning</Text>
           </View>
         </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.enterpriseCard}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('EnterpriseInvite')}
+      >
+        <Text style={styles.enterpriseEyebrow}>Enterprise</Text>
+        <Text style={styles.enterpriseTitle}>Scan for a fashion house or tailor</Text>
+        <Text style={styles.enterpriseDesc}>
+          {activeInviteCode
+            ? `Active branded code: ${activeInviteCode}${activeOrganizationName ? ` for ${activeOrganizationName}` : ''}`
+            : 'Load a branded invite code to start a licensed customer scan.'}
+        </Text>
       </TouchableOpacity>
 
       {/* Recent Measurements */}
@@ -193,6 +210,34 @@ const styles = StyleSheet.create({
     color: Colors.secondary,
     fontSize: 14,
     fontWeight: '600',
+  },
+  enterpriseCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    borderRadius: 16,
+    backgroundColor: Colors.white,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  enterpriseEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: Colors.primary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  enterpriseTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 6,
+  },
+  enterpriseDesc: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    lineHeight: 19,
   },
   // Section
   section: {
