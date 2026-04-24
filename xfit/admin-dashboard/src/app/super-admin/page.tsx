@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import AdminNav from '@/components/AdminNav';
-import { getSuperAdminDashboard } from '@/lib/api';
+import { getSuperAdminDashboard, bootstrapOrganization, BootstrapOrgResult } from '@/lib/api';
 import styles from './superadmin.module.css';
 
 interface OrgRow {
@@ -32,22 +32,65 @@ export default function SuperAdminPage() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
 
+  // Create-organization form state
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [orgName, setOrgName] = useState('');
+  const [brandName, setBrandName] = useState('');
+  const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [seats, setSeats] = useState(10);
+  const [scanQuota, setScanQuota] = useState(500);
+  const [primaryColor, setPrimaryColor] = useState('#0F2B3C');
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState('');
+  const [created, setCreated] = useState<BootstrapOrgResult | null>(null);
+
+  const reload = async () => {
+    try {
+      const res = await getSuperAdminDashboard();
+      setData(res.data as SuperAdminData);
+    } catch {
+      setError('Failed to load super admin dashboard.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isLoading) return;
     if (!user) { router.replace('/login'); return; }
     if (user.role !== 'super_admin') { router.replace('/dashboard'); return; }
-
-    (async () => {
-      try {
-        const res = await getSuperAdminDashboard();
-        setData(res.data as SuperAdminData);
-      } catch {
-        setError('Failed to load super admin dashboard.');
-      } finally {
-        setLoading(false);
-      }
-    })();
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isLoading, router]);
+
+  const handleCreateOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreating(true);
+    setCreateMsg('');
+    setCreated(null);
+    try {
+      const res = await bootstrapOrganization({
+        organizationName: orgName,
+        adminName,
+        adminEmail,
+        seats,
+        scanQuota,
+        brandName: brandName || undefined,
+        primaryColor,
+      });
+      setCreated(res.data);
+      setCreateMsg(`\u2713 Created "${orgName}". Owner can log in at /login with ${adminEmail}.`);
+      setOrgName(''); setBrandName(''); setAdminName(''); setAdminEmail('');
+      setSeats(10); setScanQuota(500); setPrimaryColor('#0F2B3C');
+      await reload();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setCreateMsg(detail || 'Failed to create organization.');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   if (isLoading || loading) return <><AdminNav /><div className={styles.center}>Loading…</div></>;
   if (error) return <><AdminNav /><div className={styles.center} style={{ color: 'var(--error)' }}>{error}</div></>;
@@ -71,7 +114,58 @@ export default function SuperAdminPage() {
             <h1 className={styles.title}>Super Admin</h1>
             <p className={styles.subtitle}>All organizations and platform metrics</p>
           </div>
+          <button
+            className={styles.btnPrimary}
+            onClick={() => setShowCreateForm(s => !s)}
+          >
+            {showCreateForm ? 'Close' : '+ Create Organization'}
+          </button>
         </div>
+
+        {showCreateForm && (
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Onboard a new organization</h2>
+            <form onSubmit={handleCreateOrg} className={styles.inlineForm}>
+              <div className={styles.formRow}>
+                <input className={styles.input} placeholder="Organization name" value={orgName}
+                  onChange={e => setOrgName(e.target.value)} required />
+                <input className={styles.input} placeholder="Brand name (optional)" value={brandName}
+                  onChange={e => setBrandName(e.target.value)} />
+              </div>
+              <div className={styles.formRow}>
+                <input className={styles.input} placeholder="Owner full name" value={adminName}
+                  onChange={e => setAdminName(e.target.value)} required />
+                <input className={styles.input} type="email" placeholder="Owner email" value={adminEmail}
+                  onChange={e => setAdminEmail(e.target.value)} required />
+              </div>
+              <div className={styles.formRow}>
+                <input className={styles.input} type="number" min={1} placeholder="Seats" value={seats}
+                  onChange={e => setSeats(parseInt(e.target.value) || 1)} required />
+                <input className={styles.input} type="number" min={1} placeholder="Scan quota" value={scanQuota}
+                  onChange={e => setScanQuota(parseInt(e.target.value) || 1)} required />
+                <input className={styles.input} type="color" value={primaryColor}
+                  onChange={e => setPrimaryColor(e.target.value)} title="Primary brand color"
+                  style={{ maxWidth: 80, padding: 4 }} />
+                <button className={styles.btnPrimary} type="submit" disabled={creating}>
+                  {creating ? 'Creating\u2026' : 'Create'}
+                </button>
+              </div>
+              {createMsg && (
+                <p className={styles.msg}
+                  style={{ color: createMsg.startsWith('\u2713') ? 'var(--success)' : 'var(--error)' }}>
+                  {createMsg}
+                </p>
+              )}
+              {created && (
+                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'var(--surface-alt, #1a1a1a)', borderRadius: 8, fontSize: '0.85rem' }}>
+                  <p style={{ margin: 0, color: 'var(--text-muted)' }}>Default invite code:</p>
+                  <p style={{ margin: '0.25rem 0', fontFamily: 'monospace', fontWeight: 600 }}>{created.defaultInviteCode}</p>
+                  <p style={{ margin: '0.5rem 0 0', color: 'var(--text-muted)' }}>Owner can sign in at <code>/login</code> with the email above (OTP will be emailed).</p>
+                </div>
+              )}
+            </form>
+          </section>
+        )}
 
         {/* Platform summary */}
         <div className={styles.metricGrid}>

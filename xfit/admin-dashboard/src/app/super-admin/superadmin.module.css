@@ -118,3 +118,37 @@
 }
 
 .input:focus { border-color: var(--brand); }
+
+.btnPrimary {
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.1rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btnPrimary:hover { opacity: 0.9; }
+.btnPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.inlineForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.formRow {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.formRow > .input { flex: 1; }
+
+.msg {
+  font-size: 0.85rem;
+  margin: 0;
+}

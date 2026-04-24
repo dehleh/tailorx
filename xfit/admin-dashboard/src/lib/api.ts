@@ -55,3 +55,27 @@ export const createBillingCheckout = (payload: {
 // Super Admin
 export const getSuperAdminDashboard = () =>
   api.get('/v1/enterprise/super-admin/dashboard');
+
+export interface BootstrapOrgPayload {
+  organizationName: string;
+  adminName: string;
+  adminEmail: string;
+  seats?: number;
+  scanQuota?: number;
+  brandName?: string;
+  primaryColor?: string;
+  imprint?: string;
+}
+
+export interface BootstrapOrgResult {
+  organizationId: string;
+  adminUserId: string;
+  licenseId: string;
+  defaultInviteCode: string;
+  billingCheckoutUrl: string;
+}
+
+export const bootstrapOrganization = (
+  payload: BootstrapOrgPayload,
+): Promise<{ data: BootstrapOrgResult }> =>
+  api.post('/v1/enterprise/bootstrap', payload);
