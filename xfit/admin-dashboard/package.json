@@ -9,17 +9,17 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "14.2.3",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0",
     "axios": "^1.6.8",
-    "js-cookie": "^3.0.5"
+    "js-cookie": "^3.0.5",
+    "next": "^14.2.35",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
   },
   "devDependencies": {
+    "@types/js-cookie": "^3.0.6",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/js-cookie": "^3.0.6",
     "typescript": "^5.4.5"
   }
 }
