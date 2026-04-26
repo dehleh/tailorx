@@ -1707,6 +1707,96 @@ async def get_super_admin_dashboard(
     finally:
         conn.close()
 
+
+def _set_organization_status(organization_id: str, new_status: str) -> dict:
+    """Update an organization's status and cascade to its license."""
+    conn = _enterprise_connection()
+    try:
+        org = conn.execute(
+            "SELECT id, name, status FROM organizations WHERE id = ?",
+            (organization_id,),
+        ).fetchone()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        conn.execute(
+            "UPDATE organizations SET status = ? WHERE id = ?",
+            (new_status, organization_id),
+        )
+        # Cascade: suspend/activate the license too so the org can't keep
+        # consuming scans while suspended.
+        license_status = "active" if new_status == "active" else "suspended"
+        conn.execute(
+            "UPDATE licenses SET status = ? WHERE organization_id = ?",
+            (license_status, organization_id),
+        )
+        # Also flip user status so their JWTs effectively stop working at the
+        # role check (admin_send_otp filters by status='active').
+        user_status = "active" if new_status == "active" else "suspended"
+        conn.execute(
+            "UPDATE organization_users SET status = ? WHERE organization_id = ?",
+            (user_status, organization_id),
+        )
+        conn.commit()
+        return {"id": organization_id, "name": org["name"], "status": new_status}
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/super-admin/organizations/{organization_id}/suspend")
+async def suspend_organization(
+    organization_id: str,
+    user: dict = Depends(_require_role("super_admin")),
+):
+    result = _set_organization_status(organization_id, "suspended")
+    logger.info(f"[super_admin] {user.get('email')} suspended org {organization_id}")
+    return result
+
+
+@app.post("/v1/enterprise/super-admin/organizations/{organization_id}/activate")
+async def activate_organization(
+    organization_id: str,
+    user: dict = Depends(_require_role("super_admin")),
+):
+    result = _set_organization_status(organization_id, "active")
+    logger.info(f"[super_admin] {user.get('email')} activated org {organization_id}")
+    return result
+
+
+@app.delete("/v1/enterprise/super-admin/organizations/{organization_id}")
+async def delete_organization(
+    organization_id: str,
+    user: dict = Depends(_require_role("super_admin")),
+):
+    """Permanently delete an organization and ALL its data (users, licenses,
+    invite links, customers, sessions, billing records). Cannot be undone."""
+    conn = _enterprise_connection()
+    try:
+        org = conn.execute(
+            "SELECT id, name FROM organizations WHERE id = ?",
+            (organization_id,),
+        ).fetchone()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        # Explicit deletes in dependency order. SQLite FK cascade requires
+        # PRAGMA per-connection; Postgres uses the schema-level ON DELETE
+        # CASCADE we declared. Doing them explicitly works on both.
+        for stmt in (
+            "DELETE FROM billing_records WHERE organization_id = ?",
+            "DELETE FROM measurement_sessions WHERE organization_id = ?",
+            "DELETE FROM customers WHERE organization_id = ?",
+            "DELETE FROM invite_links WHERE organization_id = ?",
+            "DELETE FROM licenses WHERE organization_id = ?",
+            "DELETE FROM organization_users WHERE organization_id = ?",
+            "DELETE FROM organizations WHERE id = ?",
+        ):
+            conn.execute(stmt, (organization_id,))
+        conn.commit()
+        logger.warning(f"[super_admin] {user.get('email')} DELETED org {organization_id} ({org['name']})")
+        return {"deleted": True, "id": organization_id, "name": org["name"]}
+    finally:
+        conn.close()
+
+
 @app.post("/v1/pose/detect", response_model=PoseResponse)
 async def detect_pose(
     request: PoseRequest,

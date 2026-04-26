@@ -4,7 +4,14 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import AdminNav from '@/components/AdminNav';
-import { getSuperAdminDashboard, bootstrapOrganization, BootstrapOrgResult } from '@/lib/api';
+import {
+  getSuperAdminDashboard,
+  bootstrapOrganization,
+  suspendOrganization,
+  activateOrganization,
+  deleteOrganization,
+  BootstrapOrgResult,
+} from '@/lib/api';
 import styles from './superadmin.module.css';
 
 interface OrgRow {
@@ -44,6 +51,34 @@ export default function SuperAdminPage() {
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState('');
   const [created, setCreated] = useState<BootstrapOrgResult | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
+
+  const handleSuspend = async (org: OrgRow) => {
+    if (!confirm(`Suspend "${org.name}"? Users will not be able to sign in or consume scans until reactivated.`)) return;
+    setActingId(org.id);
+    try { await suspendOrganization(org.id); await reload(); }
+    catch { alert('Failed to suspend organization.'); }
+    finally { setActingId(null); }
+  };
+
+  const handleActivate = async (org: OrgRow) => {
+    setActingId(org.id);
+    try { await activateOrganization(org.id); await reload(); }
+    catch { alert('Failed to activate organization.'); }
+    finally { setActingId(null); }
+  };
+
+  const handleDelete = async (org: OrgRow) => {
+    const confirmText = prompt(`This permanently deletes "${org.name}" and ALL its data (users, licenses, invites, customers, sessions, billing). This cannot be undone.\n\nType the org name to confirm:`);
+    if (confirmText !== org.name) {
+      if (confirmText !== null) alert('Name did not match. Cancelled.');
+      return;
+    }
+    setActingId(org.id);
+    try { await deleteOrganization(org.id); await reload(); }
+    catch { alert('Failed to delete organization.'); }
+    finally { setActingId(null); }
+  };
 
   const reload = async () => {
     try {
@@ -220,7 +255,7 @@ export default function SuperAdminPage() {
               <thead>
                 <tr>
                   <th>Name</th><th>Brand</th><th>Slug</th><th>Status</th>
-                  <th>Seats</th><th>Scans Used / Quota</th><th>Revenue</th><th>Created</th>
+                  <th>Seats</th><th>Scans Used / Quota</th><th>Revenue</th><th>Created</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -247,11 +282,33 @@ export default function SuperAdminPage() {
                       </td>
                       <td>{org.currency} {org.amount?.toLocaleString()}</td>
                       <td>{new Date(org.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          {org.status === 'active' ? (
+                            <button
+                              onClick={() => handleSuspend(org)}
+                              disabled={actingId === org.id}
+                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'var(--warning, #c97c00)', color: '#fff', border: 0, borderRadius: 4, cursor: 'pointer' }}
+                            >Suspend</button>
+                          ) : (
+                            <button
+                              onClick={() => handleActivate(org)}
+                              disabled={actingId === org.id}
+                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'var(--success, #2a9d4a)', color: '#fff', border: 0, borderRadius: 4, cursor: 'pointer' }}
+                            >Activate</button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(org)}
+                            disabled={actingId === org.id}
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'var(--error, #c0392b)', color: '#fff', border: 0, borderRadius: 4, cursor: 'pointer' }}
+                          >Delete</button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>No organizations found</td></tr>
+                  <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>No organizations found</td></tr>
                 )}
               </tbody>
             </table>

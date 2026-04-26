@@ -79,3 +79,12 @@ export const bootstrapOrganization = (
   payload: BootstrapOrgPayload,
 ): Promise<{ data: BootstrapOrgResult }> =>
   api.post('/v1/enterprise/bootstrap', payload);
+
+export const suspendOrganization = (organizationId: string) =>
+  api.post(`/v1/enterprise/super-admin/organizations/${organizationId}/suspend`);
+
+export const activateOrganization = (organizationId: string) =>
+  api.post(`/v1/enterprise/super-admin/organizations/${organizationId}/activate`);
+
+export const deleteOrganization = (organizationId: string) =>
+  api.delete(`/v1/enterprise/super-admin/organizations/${organizationId}`);
