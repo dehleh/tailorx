@@ -1391,6 +1391,24 @@ async def paystack_webhook(request: Request):
 # AUTH ENDPOINTS (JWT-based, used by web admin app)
 # ============================================================
 
+@app.get("/v1/_debug/admin-users")
+async def _debug_list_admin_users(secret: str = ""):
+    """TEMPORARY: list all org_owner/org_admin/super_admin users so we can
+    diagnose the OTP-not-arriving issue. Remove after debugging."""
+    if secret != (os.environ.get("JWT_SECRET", "") or "")[:16]:
+        raise HTTPException(status_code=403, detail="bad secret")
+    conn = _enterprise_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, organization_id, name, email, role, status, created_at "
+            "FROM organization_users WHERE role IN ('org_owner','org_admin','super_admin') "
+            "ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
+        return {"users": [dict(r) for r in rows]}
+    finally:
+        conn.close()
+
+
 @app.post("/v1/auth/admin/send-otp")
 async def admin_send_otp(request: AdminLoginRequest):
     """Send a login OTP to an admin or super_admin email."""
@@ -1406,8 +1424,10 @@ async def admin_send_otp(request: AdminLoginRequest):
 
     if not user_row:
         # Security: don't reveal if email exists, but still return 200
+        logger.warning(f"[admin_send_otp] no active admin user found for email='{email}' — returning sent:true silently")
         return {"sent": True}
 
+    logger.info(f"[admin_send_otp] match found id={user_row['id']} role={user_row['role']} — generating OTP and sending email")
     code = str(random.randint(100000, 999999))
     _otp_store[email] = {"code": code, "expires_at": datetime.utcnow() + timedelta(minutes=10)}
     html = (
