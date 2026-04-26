@@ -96,6 +96,9 @@ ENTERPRISE_DB_PATH = os.environ.get(
     "ENTERPRISE_DB_PATH",
     os.path.join(os.path.dirname(__file__), "enterprise.db"),
 )
+# If DATABASE_URL is set (e.g. Railway Postgres), it takes precedence over SQLite.
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_POSTGRES = bool(DATABASE_URL)
 DEFAULT_BILLING_CURRENCY = os.environ.get("TAILORX_BILLING_CURRENCY", "NGN")
 
 # JWT config
@@ -444,10 +447,77 @@ def verify_api_key(authorization: str | None) -> bool:
     return token == API_KEY
 
 
-def _enterprise_connection() -> sqlite3.Connection:
+def _enterprise_connection():
+    """Return a DB connection. Postgres if DATABASE_URL is set, else SQLite.
+
+    Both return objects exposing the small sqlite3-style API used in this file:
+    `conn.execute(sql, params).fetchone()/fetchall()`, `conn.commit()`,
+    `conn.close()`, and `conn.executescript(sql)`.
+    Rows support dict-style access by column name (`row['col']`).
+    """
+    if USE_POSTGRES:
+        return _PgConnection(DATABASE_URL)
     conn = sqlite3.connect(ENTERPRISE_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+class _PgCursor:
+    """Wraps a psycopg cursor to expose .fetchone()/.fetchall() returning dict rows."""
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self._cursor)
+
+
+class _PgConnection:
+    """Thin wrapper around psycopg.Connection that mimics the sqlite3.Connection
+    surface used by this codebase."""
+
+    def __init__(self, dsn: str):
+        import psycopg
+        from psycopg.rows import dict_row
+        # Normalize Railway-style postgres:// to postgresql://
+        if dsn.startswith("postgres://"):
+            dsn = "postgresql://" + dsn[len("postgres://"):]
+        self._conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
+
+    @staticmethod
+    def _translate(sql: str) -> str:
+        # Replace SQLite '?' placeholders with psycopg '%s'.
+        # None of our queries embed literal '?' inside strings, so a plain
+        # replace is safe.
+        return sql.replace("?", "%s")
+
+    def execute(self, sql: str, params=()):
+        cur = self._conn.cursor()
+        cur.execute(self._translate(sql), tuple(params) if params else None)
+        return _PgCursor(cur)
+
+    def executescript(self, script: str):
+        # Split on ';' and execute each non-empty, non-PRAGMA statement.
+        for stmt in script.split(";"):
+            s = stmt.strip()
+            if not s:
+                continue
+            if s.upper().startswith("PRAGMA"):
+                continue  # PRAGMAs are SQLite-only
+            cur = self._conn.cursor()
+            cur.execute(s)
+            cur.close()
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
 
 
 def _enterprise_now() -> str:
@@ -463,8 +533,16 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
-def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
-    columns = {row['name'] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+def _ensure_column(conn, table_name: str, column_name: str, definition: str) -> None:
+    if USE_POSTGRES:
+        rows = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = ?",
+            (table_name,),
+        ).fetchall()
+        columns = {r['column_name'] for r in rows}
+    else:
+        columns = {row['name'] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
     if column_name not in columns:
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
