@@ -487,7 +487,11 @@ class _PgConnection:
         # Normalize Railway-style postgres:// to postgresql://
         if dsn.startswith("postgres://"):
             dsn = "postgresql://" + dsn[len("postgres://"):]
-        self._conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
+        # connect_timeout prevents hanging the app at startup if Postgres
+        # private DNS isn't ready yet on first boot (Railway healthcheck is 30s).
+        self._conn = psycopg.connect(
+            dsn, row_factory=dict_row, autocommit=False, connect_timeout=10
+        )
 
     @staticmethod
     def _translate(sql: str) -> str:
@@ -836,7 +840,33 @@ def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> 
     }
 
 
-init_enterprise_db()
+def _init_enterprise_db_with_retry(max_attempts: int = 6, delay_seconds: float = 3.0) -> None:
+    """Initialize the DB, retrying briefly if Postgres isn't reachable yet.
+
+    Railway's private DNS can take a few seconds to become resolvable on first
+    boot; without retries the app would crash immediately and Railway would
+    rollback the deploy."""
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            init_enterprise_db()
+            if USE_POSTGRES:
+                logger.info(f"Enterprise DB initialized via Postgres (attempt {attempt})")
+            else:
+                logger.info(f"Enterprise DB initialized via SQLite at {ENTERPRISE_DB_PATH}")
+            return
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                f"DB init attempt {attempt}/{max_attempts} failed: {exc.__class__.__name__}: {exc}"
+            )
+            if attempt < max_attempts:
+                time.sleep(delay_seconds)
+    logger.error(f"DB init exhausted retries; last error: {last_exc}")
+    raise last_exc
+
+
+_init_enterprise_db_with_retry()
 
 # ============================================================
 # JWT / AUTH HELPERS
