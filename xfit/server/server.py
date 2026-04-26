@@ -1100,6 +1100,29 @@ async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
     finally:
         conn.close()
 
+    # Send a welcome email to the new org owner so they know the account exists
+    # and can sign in. The actual OTP is requested at /login.
+    owner_email = request.adminEmail.strip().lower()
+    login_url = f"{WEB_APP_URL.rstrip('/')}/login"
+    org_display = request.brandName or request.organizationName
+    welcome_html = (
+        f"<p>Hi {request.adminName or 'there'},</p>"
+        f"<p>Your Tailor-X organization <strong>{org_display}</strong> is ready.</p>"
+        f"<p>Sign in to your admin dashboard at "
+        f"<a href=\"{login_url}\">{login_url}</a> using <strong>{owner_email}</strong>. "
+        f"You'll receive a one-time code by email to verify it's you.</p>"
+        f"<p>Default customer invite code: <code>{invite_code}</code></p>"
+        f"<p>— Tailor-X</p>"
+    )
+    try:
+        sent = _send_email(owner_email, f"Welcome to Tailor-X — {org_display}", welcome_html)
+        if sent:
+            logger.info(f"[bootstrap_enterprise] welcome email sent to {owner_email}")
+        else:
+            logger.warning(f"[bootstrap_enterprise] welcome email send returned False for {owner_email}")
+    except Exception as exc:
+        logger.error(f"[bootstrap_enterprise] welcome email failed for {owner_email}: {exc}")
+
     return {
         "organizationId": organization_id,
         "adminUserId": admin_user_id,
