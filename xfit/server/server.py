@@ -48,7 +48,7 @@ import requests as http_requests
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, EmailStr
 import mediapipe as mp
 import jwt as pyjwt
 import hmac
@@ -186,6 +186,69 @@ else:
 # In-memory OTP store: { email: { code, expires_at } }
 _otp_store: dict[str, dict] = {}
 
+
+def _otp_set(email: str, code: str, ttl_minutes: int = 10) -> None:
+    """Persist an OTP code for an email. Postgres if available, else in-memory."""
+    expires = datetime.utcnow() + timedelta(minutes=ttl_minutes)
+    sent_at = datetime.utcnow()
+    _otp_store[email] = {"code": code, "expires_at": expires, "sent_at": sent_at}
+    if not USE_POSTGRES:
+        return
+    conn = _enterprise_connection()
+    try:
+        # Postgres-style upsert; SQLite fallback handled above
+        conn.execute(
+            """
+            INSERT INTO otp_codes (email, code, expires_at, sent_at) VALUES (?, ?, ?, ?)
+            ON CONFLICT (email) DO UPDATE SET code=EXCLUDED.code, expires_at=EXCLUDED.expires_at, sent_at=EXCLUDED.sent_at
+            """,
+            (email, code, expires.isoformat(), sent_at.isoformat()),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.error(f"otp_set DB write failed for {email}: {exc}")
+    finally:
+        conn.close()
+
+
+def _otp_get(email: str) -> Optional[dict]:
+    """Fetch an OTP entry (dict with 'code', 'expires_at', 'sent_at') or None."""
+    entry = _otp_store.get(email)
+    if entry:
+        return entry
+    if not USE_POSTGRES:
+        return None
+    conn = _enterprise_connection()
+    try:
+        row = conn.execute(
+            "SELECT code, expires_at, sent_at FROM otp_codes WHERE email = ?",
+            (email,),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            exp = datetime.fromisoformat(row["expires_at"]) if isinstance(row["expires_at"], str) else row["expires_at"]
+            snt = datetime.fromisoformat(row["sent_at"]) if isinstance(row["sent_at"], str) else row["sent_at"]
+        except Exception:
+            return None
+        entry = {"code": row["code"], "expires_at": exp, "sent_at": snt}
+        _otp_store[email] = entry  # cache
+        return entry
+    finally:
+        conn.close()
+
+
+def _otp_delete(email: str) -> None:
+    _otp_store.pop(email, None)
+    if not USE_POSTGRES:
+        return
+    conn = _enterprise_connection()
+    try:
+        conn.execute("DELETE FROM otp_codes WHERE email = ?", (email,))
+        conn.commit()
+    finally:
+        conn.close()
+
 # ============================================================
 # MODELS
 # ============================================================
@@ -232,14 +295,14 @@ class HealthResponse(BaseModel):
 
 
 class EnterpriseBootstrapRequest(BaseModel):
-    organizationName: str
-    adminName: str
-    adminEmail: str
-    seats: int = 10
-    scanQuota: int = 500
-    brandName: Optional[str] = None
-    primaryColor: str = "#0F2B3C"
-    imprint: Optional[str] = None
+    organizationName: str = Field(min_length=1, max_length=120)
+    adminName: str = Field(min_length=1, max_length=120)
+    adminEmail: EmailStr
+    seats: int = Field(default=10, ge=1, le=100000)
+    scanQuota: int = Field(default=500, ge=1, le=10_000_000)
+    brandName: Optional[str] = Field(default=None, max_length=120)
+    primaryColor: str = Field(default="#0F2B3C", max_length=16)
+    imprint: Optional[str] = Field(default=None, max_length=240)
 
 
 class EnterpriseInviteRequest(BaseModel):
@@ -273,17 +336,17 @@ class BillingCheckoutRequest(BaseModel):
 
 
 class AdminLoginRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 
 class AdminOTPVerifyRequest(BaseModel):
-    email: str
-    code: str
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=12)
 
 
 class InviteStaffRequest(BaseModel):
-    name: str
-    email: str
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
     role: str = "staff"   # org_admin | staff
 
 # ============================================================
@@ -460,13 +523,17 @@ def verify_api_key(authorization: str | None) -> bool:
 def _enterprise_connection():
     """Return a DB connection. Postgres if DATABASE_URL is set, else SQLite.
 
+    On Postgres we pull from a process-wide ConnectionPool (created lazily)
+    so we don't open a fresh TCP connection per request — which would burn
+    through Railway's ~65-conn limit under load.
+
     Both return objects exposing the small sqlite3-style API used in this file:
     `conn.execute(sql, params).fetchone()/fetchall()`, `conn.commit()`,
     `conn.close()`, and `conn.executescript(sql)`.
     Rows support dict-style access by column name (`row['col']`).
     """
     if USE_POSTGRES:
-        return _PgConnection(DATABASE_URL)
+        return _PgConnection.from_pool()
     conn = sqlite3.connect(ENTERPRISE_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -488,20 +555,37 @@ class _PgCursor:
 
 
 class _PgConnection:
-    """Thin wrapper around psycopg.Connection that mimics the sqlite3.Connection
-    surface used by this codebase."""
+    """Thin wrapper around a pooled psycopg.Connection that mimics the
+    sqlite3.Connection surface used by this codebase."""
 
-    def __init__(self, dsn: str):
-        import psycopg
-        from psycopg.rows import dict_row
-        # Normalize Railway-style postgres:// to postgresql://
-        if dsn.startswith("postgres://"):
-            dsn = "postgresql://" + dsn[len("postgres://"):]
-        # connect_timeout prevents hanging the app at startup if Postgres
-        # private DNS isn't ready yet on first boot (Railway healthcheck is 30s).
-        self._conn = psycopg.connect(
-            dsn, row_factory=dict_row, autocommit=False, connect_timeout=10
-        )
+    _pool = None  # populated lazily on first use
+
+    @classmethod
+    def _get_pool(cls):
+        if cls._pool is None:
+            from psycopg_pool import ConnectionPool
+            from psycopg.rows import dict_row
+            dsn = DATABASE_URL
+            if dsn.startswith("postgres://"):
+                dsn = "postgresql://" + dsn[len("postgres://"):]
+            min_size = int(os.environ.get("DB_POOL_MIN", "1"))
+            max_size = int(os.environ.get("DB_POOL_MAX", "10"))
+            cls._pool = ConnectionPool(
+                conninfo=dsn,
+                min_size=min_size,
+                max_size=max_size,
+                timeout=10,
+                kwargs={"row_factory": dict_row, "autocommit": False},
+                open=True,
+            )
+            logger.info(f"Postgres pool initialized (min={min_size}, max={max_size})")
+        return cls._pool
+
+    @classmethod
+    def from_pool(cls) -> "_PgConnection":
+        instance = cls.__new__(cls)
+        instance._conn = cls._get_pool().getconn()
+        return instance
 
     @staticmethod
     def _translate(sql: str) -> str:
@@ -530,8 +614,19 @@ class _PgConnection:
     def commit(self):
         self._conn.commit()
 
+    def rollback(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
     def close(self):
-        self._conn.close()
+        # Return the connection to the pool instead of actually closing it.
+        try:
+            self._conn.rollback()  # discard any uncommitted state
+        except Exception:
+            pass
+        self._get_pool().putconn(self._conn)
 
 
 def _enterprise_now() -> str:
@@ -673,6 +768,51 @@ def init_enterprise_db() -> None:
         _ensure_column(conn, 'billing_records', 'paystack_reference', 'TEXT')
         _ensure_column(conn, 'billing_records', 'overage_units', 'INTEGER NOT NULL DEFAULT 0')
         _ensure_column(conn, 'billing_records', 'overage_unit_amount', 'REAL NOT NULL DEFAULT 0')
+
+        # Persistent OTP store (replaces in-memory dict so codes survive restarts)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS otp_codes (
+                email TEXT PRIMARY KEY,
+                code TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                sent_at TEXT NOT NULL
+            )
+            """
+        )
+        # Webhook idempotency: store every processed Paystack reference
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS processed_webhooks (
+                provider TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                processed_at TEXT NOT NULL,
+                PRIMARY KEY (provider, event_id, event_type)
+            )
+            """
+        )
+
+        # Performance indexes (no-ops if already present)
+        for idx_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_org_users_email ON organization_users(email)",
+            "CREATE INDEX IF NOT EXISTS idx_org_users_org_id ON organization_users(organization_id)",
+            "CREATE INDEX IF NOT EXISTS idx_licenses_org_id ON licenses(organization_id)",
+            "CREATE INDEX IF NOT EXISTS idx_customers_org_id ON customers(organization_id)",
+            "CREATE INDEX IF NOT EXISTS idx_customers_org_email ON customers(organization_id, email)",
+            "CREATE INDEX IF NOT EXISTS idx_invite_links_org_id ON invite_links(organization_id)",
+            "CREATE INDEX IF NOT EXISTS idx_invite_links_code ON invite_links(code)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_org_id ON measurement_sessions(organization_id)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON measurement_sessions(customer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_billing_org_id ON billing_records(organization_id)",
+            "CREATE INDEX IF NOT EXISTS idx_billing_paystack_ref ON billing_records(paystack_reference)",
+            # Partial unique: at most one super_admin row in the table
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_one_super_admin ON organization_users(role) WHERE role='super_admin'",
+        ):
+            try:
+                conn.execute(idx_sql)
+            except Exception as exc:
+                logger.warning(f"Index create skipped ({exc}): {idx_sql}")
         conn.commit()
     finally:
         conn.close()
@@ -1027,6 +1167,18 @@ def _paystack_verify_signature(payload: bytes, signature: str) -> bool:
 @app.get("/health", response_model=HealthResponse)
 @app.get("/v1/pose/health", response_model=HealthResponse)
 async def health():
+    db_ok = True
+    try:
+        conn = _enterprise_connection()
+        try:
+            conn.execute("SELECT 1").fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        db_ok = False
+        logger.error(f"Health check DB probe failed: {exc}")
+    if not db_ok:
+        raise HTTPException(status_code=503, detail="database unavailable")
     return HealthResponse(
         status="ok",
         model_loaded=_detector is not None,
@@ -1447,6 +1599,26 @@ async def paystack_webhook(request: Request):
     customer_code = customer_obj.get("customer_code", "")
     subscription_code = data_obj.get("subscription_code") or data_obj.get("plan", {}).get("subscription_code", "") if isinstance(data_obj.get("plan"), dict) else data_obj.get("subscription_code", "")
 
+    # Idempotency: dedupe by (provider, reference, event_type). Paystack may
+    # retry the same webhook; we want to apply it exactly once.
+    idempotency_key = reference or data_obj.get("id") or event.get("id") or ""
+    if idempotency_key:
+        dedupe_conn = _enterprise_connection()
+        try:
+            try:
+                dedupe_conn.execute(
+                    "INSERT INTO processed_webhooks (provider, event_id, event_type, processed_at) VALUES (?, ?, ?, ?)",
+                    ("paystack", str(idempotency_key), event_type, _enterprise_now()),
+                )
+                dedupe_conn.commit()
+            except Exception:
+                if hasattr(dedupe_conn, "rollback"):
+                    dedupe_conn.rollback()
+                logger.info(f"Paystack webhook duplicate ignored: {event_type} {idempotency_key}")
+                return {"received": True, "event": event_type, "duplicate": True}
+        finally:
+            dedupe_conn.close()
+
     conn = _enterprise_connection()
     try:
         if event_type == "charge.success":
@@ -1588,7 +1760,7 @@ async def admin_send_otp(request: AdminLoginRequest):
 
     logger.info(f"[admin_send_otp] match found id={user_row['id']} role={user_row['role']} — generating OTP and sending email")
     code = str(random.randint(100000, 999999))
-    _otp_store[email] = {"code": code, "expires_at": datetime.utcnow() + timedelta(minutes=10)}
+    _otp_set(email, code, ttl_minutes=10)
     html = (
         f"<p>Your Tailor-X admin login code is:</p>"
         f"<h2 style='font-family:monospace;letter-spacing:4px'>{code}</h2>"
@@ -1607,13 +1779,13 @@ async def admin_verify_otp(request: AdminOTPVerifyRequest):
     email = request.email.strip().lower()
     if not _otp_throttle_check("verify", email, 900, _OTP_VERIFY_MAX_PER_15MIN):
         raise HTTPException(status_code=429, detail="Too many attempts. Try again in 15 minutes.")
-    entry = _otp_store.get(email)
+    entry = _otp_get(email)
     if not entry or entry["code"] != request.code.strip():
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     if datetime.utcnow() > entry["expires_at"]:
-        del _otp_store[email]
+        _otp_delete(email)
         raise HTTPException(status_code=400, detail="OTP expired")
-    del _otp_store[email]
+    _otp_delete(email)
 
     conn = _enterprise_connection()
     try:
@@ -1645,7 +1817,10 @@ async def admin_verify_otp(request: AdminOTPVerifyRequest):
 
 @app.post("/v1/auth/admin/provision-super-admin")
 async def provision_super_admin(request: AdminLoginRequest):
-    """One-time endpoint to provision the first super_admin (only works if none exist)."""
+    """One-time endpoint to provision the first super_admin (only works if none exist).
+
+    Race-safe: relies on the partial unique index `idx_one_super_admin` so
+    concurrent calls cannot both succeed."""
     conn = _enterprise_connection()
     try:
         existing = conn.execute(
@@ -1654,11 +1829,18 @@ async def provision_super_admin(request: AdminLoginRequest):
         if existing > 0:
             raise HTTPException(status_code=409, detail="Super admin already provisioned")
         sa_id = _new_id("user")
-        conn.execute(
-            "INSERT INTO organization_users (id, organization_id, name, email, role, status, created_at) VALUES (?,NULL,'Super Admin',?,'super_admin','active',?)",
-            (sa_id, request.email.strip().lower(), _enterprise_now()),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                "INSERT INTO organization_users (id, organization_id, name, email, role, status, created_at) VALUES (?,NULL,'Super Admin',?,'super_admin','active',?)",
+                (sa_id, request.email.strip().lower(), _enterprise_now()),
+            )
+            conn.commit()
+        except Exception as exc:
+            # Most likely the partial unique index fired due to a concurrent call.
+            if hasattr(conn, "rollback"):
+                conn.rollback()
+            logger.warning(f"provision_super_admin insert failed: {exc}")
+            raise HTTPException(status_code=409, detail="Super admin already provisioned")
         return {"created": True, "id": sa_id}
     finally:
         conn.close()
@@ -3001,18 +3183,14 @@ async def send_otp(req: OTPSendRequest):
         raise HTTPException(status_code=400, detail="Invalid email address")
 
     # Rate limit: don't re-send if a valid code exists and was sent < 60s ago
-    existing = _otp_store.get(email)
+    existing = _otp_get(email)
     if existing and existing.get("sent_at"):
         elapsed = (datetime.utcnow() - existing["sent_at"]).total_seconds()
         if elapsed < 60:
             return {"success": True, "message": "Code already sent, check your email"}
 
     code = f"{random.randint(100000, 999999)}"
-    _otp_store[email] = {
-        "code": code,
-        "expires_at": datetime.utcnow() + timedelta(minutes=10),
-        "sent_at": datetime.utcnow(),
-    }
+    _otp_set(email, code, ttl_minutes=10)
 
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;">
@@ -3037,20 +3215,20 @@ async def send_otp(req: OTPSendRequest):
 async def verify_otp(req: OTPVerifyRequest):
     """Verify the 6-digit OTP code."""
     email = req.email.strip().lower()
-    stored = _otp_store.get(email)
+    stored = _otp_get(email)
 
     if not stored:
         raise HTTPException(status_code=400, detail="No code was sent to this email")
 
     if datetime.utcnow() > stored["expires_at"]:
-        del _otp_store[email]
+        _otp_delete(email)
         raise HTTPException(status_code=400, detail="Code has expired, request a new one")
 
     if stored["code"] != req.code.strip():
         raise HTTPException(status_code=400, detail="Invalid code")
 
     # Code is valid — clean up
-    del _otp_store[email]
+    _otp_delete(email)
     return {"success": True, "verified": True, "email": email}
 
 
