@@ -104,13 +104,23 @@ DEFAULT_BILLING_CURRENCY = os.environ.get("TAILORX_BILLING_CURRENCY", "NGN")
 # JWT config
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = int(os.environ.get("JWT_EXPIRY_HOURS", 72))
+JWT_EXPIRY_HOURS = int(os.environ.get("JWT_EXPIRY_HOURS", 24))
+# In production we MUST have a stable JWT_SECRET — otherwise every restart
+# silently invalidates every issued admin token. The only acceptable
+# auto-generated secret is in local dev (RAILWAY_ENVIRONMENT not set).
 if not JWT_SECRET:
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("TAILORX_REQUIRE_JWT_SECRET"):
+        raise RuntimeError(
+            "JWT_SECRET env var is required in production. Refusing to start with an ephemeral secret."
+        )
     JWT_SECRET = secrets.token_hex(32)
     logger.warning(
-        "JWT_SECRET env var not set — generated an ephemeral secret. "
-        "All issued admin tokens will become invalid on restart. "
-        "Set JWT_SECRET in production."
+        "JWT_SECRET not set — using ephemeral dev secret. "
+        "Set JWT_SECRET in production or all admin tokens will be invalidated on restart."
+    )
+elif len(JWT_SECRET) < 32:
+    logger.warning(
+        "JWT_SECRET is shorter than 32 chars — recommend at least 32 random hex chars."
     )
 
 # Paystack config (https://paystack.com/docs/api/)
@@ -991,9 +1001,15 @@ def _paystack_initialize_transaction(
 
 
 def _paystack_verify_signature(payload: bytes, signature: str) -> bool:
-    """Verify a Paystack webhook signature (HMAC-SHA512 over the raw body)."""
+    """Verify a Paystack webhook signature (HMAC-SHA512 over the raw body).
+
+    Fails closed: if PAYSTACK_SECRET_KEY isn't configured we refuse all
+    webhooks rather than blindly trust them. This prevents an attacker from
+    forging payment confirmations on a misconfigured deploy.
+    """
     if not PAYSTACK_SECRET_KEY:
-        return True  # dev mode: skip
+        logger.error("Paystack webhook rejected: PAYSTACK_SECRET_KEY not configured")
+        return False
     if not signature:
         return False
     expected = hmac.new(
@@ -1522,28 +1538,40 @@ async def paystack_webhook(request: Request):
 # AUTH ENDPOINTS (JWT-based, used by web admin app)
 # ============================================================
 
-@app.get("/v1/_debug/admin-users")
-async def _debug_list_admin_users(secret: str = ""):
-    """TEMPORARY: list all org_owner/org_admin/super_admin users so we can
-    diagnose the OTP-not-arriving issue. Remove after debugging."""
-    if secret != (os.environ.get("JWT_SECRET", "") or "")[:16]:
-        raise HTTPException(status_code=403, detail="bad secret")
-    conn = _enterprise_connection()
-    try:
-        rows = conn.execute(
-            "SELECT id, organization_id, name, email, role, status, created_at "
-            "FROM organization_users WHERE role IN ('org_owner','org_admin','super_admin') "
-            "ORDER BY created_at DESC LIMIT 50"
-        ).fetchall()
-        return {"users": [dict(r) for r in rows]}
-    finally:
-        conn.close()
+# Simple in-process throttle for OTP send/verify. Resets on restart, which is
+# acceptable: an attacker would need a clean window AND would still be capped
+# by per-email limits. For multi-instance deployments this should move to
+# Redis. Keys: send=("send", email), verify=("verify", email).
+_otp_throttle: dict[tuple[str, str], list[float]] = {}
+_OTP_SEND_INTERVAL_SEC = 60          # min seconds between send-otp for the same email
+_OTP_SEND_MAX_PER_HOUR = 5           # max sends per email per hour
+_OTP_VERIFY_MAX_PER_15MIN = 5        # max verify attempts per email per 15 min
+
+
+def _otp_throttle_check(kind: str, email: str, window_sec: int, max_attempts: int) -> bool:
+    """Return True if the request is allowed; False if rate-limited."""
+    now = time.time()
+    key = (kind, email)
+    bucket = [t for t in _otp_throttle.get(key, []) if now - t < window_sec]
+    if len(bucket) >= max_attempts:
+        _otp_throttle[key] = bucket
+        return False
+    bucket.append(now)
+    _otp_throttle[key] = bucket
+    return True
 
 
 @app.post("/v1/auth/admin/send-otp")
 async def admin_send_otp(request: AdminLoginRequest):
     """Send a login OTP to an admin or super_admin email."""
     email = request.email.strip().lower()
+
+    # Throttle BEFORE doing DB lookups, so we don't reveal user existence
+    # via timing differences either.
+    if not _otp_throttle_check("send_short", email, _OTP_SEND_INTERVAL_SEC, 1):
+        raise HTTPException(status_code=429, detail="Please wait before requesting another code.")
+    if not _otp_throttle_check("send_hour", email, 3600, _OTP_SEND_MAX_PER_HOUR):
+        raise HTTPException(status_code=429, detail="Too many code requests. Try again later.")
     conn = _enterprise_connection()
     try:
         user_row = conn.execute(
@@ -1569,7 +1597,7 @@ async def admin_send_otp(request: AdminLoginRequest):
     try:
         _send_email(email, "Your Tailor-X admin login code", html)
     except Exception as exc:  # don't leak email-send failures to caller
-        print(f"[admin_send_otp] email send failed for {email}: {exc}")
+        logger.error(f"[admin_send_otp] email send failed for {email}: {exc}")
     return {"sent": True}
 
 
@@ -1577,6 +1605,8 @@ async def admin_send_otp(request: AdminLoginRequest):
 async def admin_verify_otp(request: AdminOTPVerifyRequest):
     """Verify OTP and return a signed JWT with role + org claims."""
     email = request.email.strip().lower()
+    if not _otp_throttle_check("verify", email, 900, _OTP_VERIFY_MAX_PER_15MIN):
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again in 15 minutes.")
     entry = _otp_store.get(email)
     if not entry or entry["code"] != request.code.strip():
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")

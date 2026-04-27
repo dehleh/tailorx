@@ -36,8 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (adminUser: AdminUser) => {
-    Cookies.set('tailorx_admin_token', adminUser.token, { expires: 3, sameSite: 'strict' });
-    Cookies.set('tailorx_admin_user', JSON.stringify(adminUser), { expires: 3, sameSite: 'strict' });
+    // Cookies are restricted to HTTPS in production (secure flag) and same-site
+    // strict to mitigate CSRF. Note: js-cookie cannot set HttpOnly (browser-side
+    // limitation) — moving to a server-side session is the next hardening step.
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const opts: Cookies.CookieAttributes = {
+      expires: 1,
+      sameSite: 'strict',
+      secure: isHttps,
+    };
+    Cookies.set('tailorx_admin_token', adminUser.token, opts);
+    Cookies.set('tailorx_admin_user', JSON.stringify(adminUser), opts);
     setUser(adminUser);
   };
 
