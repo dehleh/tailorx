@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  background: #FFFFFF;
+  color: #0F2B3C;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer utilities {
+  .gradient-bg {
+    background:
+      radial-gradient(at 20% 0%, rgba(20, 184, 166, 0.18) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, rgba(15, 43, 60, 0.12) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(20, 184, 166, 0.10) 0px, transparent 60%);
+  }
+  .text-balance { text-wrap: balance; }
+}

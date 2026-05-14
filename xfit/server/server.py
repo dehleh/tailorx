@@ -35,11 +35,8 @@ import logging
 import random
 import re
 import sqlite3
-import smtplib
 import secrets
 import uuid
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from typing import Optional, Any
 from datetime import datetime, timedelta
 
@@ -47,8 +44,10 @@ import numpy as np
 import requests as http_requests
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, EmailStr
+from starlette.middleware.base import BaseHTTPMiddleware
 import mediapipe as mp
 import jwt as pyjwt
 import hmac
@@ -81,17 +80,9 @@ PORT = int(os.environ.get("PORT", 8000))
 MODEL_PATH = os.environ.get("MODEL_PATH", "pose_landmarker_full.task")
 SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "selfie_segmenter.tflite")
 
-# Email config for OTP
-# Primary: Resend HTTP API (works on Railway, which blocks SMTP ports)
+# Email config for OTP (Resend HTTP API only — SMTP support removed)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_FROM = os.environ.get("RESEND_FROM", "Tailor-XFit <onboarding@resend.dev>")  # Verify domain on Resend for custom sender
-
-# Fallback: SMTP (works on servers that allow outbound SMTP)
-SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-SMTP_USER = os.environ.get("SMTP_USER", "")       # e.g. your-email@gmail.com
-SMTP_PASS = os.environ.get("SMTP_PASS", "")       # Gmail App Password (not your login password)
-SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER)
 ENTERPRISE_DB_PATH = os.environ.get(
     "ENTERPRISE_DB_PATH",
     os.path.join(os.path.dirname(__file__), "enterprise.db"),
@@ -135,7 +126,7 @@ OVERAGE_SCAN_PRICE = float(os.environ.get("TAILORX_OVERAGE_SCAN_PRICE", "500")) 
 OVERAGE_GRACE_SCANS = int(os.environ.get("TAILORX_OVERAGE_GRACE_SCANS", "25"))
 
 # CORS allowlist — comma-separated list of allowed origins. Defaults to web app + localhost dev.
-_default_origins = f"{WEB_APP_URL},http://localhost:3001,http://localhost:19006"
+_default_origins = f"{WEB_APP_URL},https://tailor-xfit.app,https://www.tailor-xfit.app,http://localhost:3000,http://localhost:3001,http://localhost:19006"
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get("TAILORX_ALLOWED_ORIGINS", _default_origins).split(",")
@@ -164,8 +155,8 @@ def _validate_production_env() -> None:
         missing.append("JWT_SECRET")
     if not PAYSTACK_SECRET_KEY:
         missing.append("PAYSTACK_SECRET_KEY")
-    if not (RESEND_API_KEY or SMTP_USER):
-        missing.append("RESEND_API_KEY or SMTP_USER")
+    if not RESEND_API_KEY:
+        missing.append("RESEND_API_KEY")
     if missing:
         logger.warning(
             "⚠️  Production readiness: missing env vars: %s",
@@ -175,13 +166,32 @@ def _validate_production_env() -> None:
 
 _validate_production_env()
 
+# Sentry (optional — only initializes if SENTRY_DSN is set)
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=os.environ.get("SENTRY_ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "production")),
+            release=os.environ.get("SENTRY_RELEASE", "tailorx-backend@2.0.0"),
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            send_default_pii=False,
+            integrations=[FastApiIntegration(), StarletteIntegration()],
+        )
+        logger.info("Sentry initialized")
+    except Exception as exc:
+        logger.warning(f"Sentry init failed: {exc}")
+else:
+    logger.info("Sentry: SENTRY_DSN not set, skipping")
+
 # Log email config at startup
 if RESEND_API_KEY:
     logger.info(f"Email: Resend API configured (from: {RESEND_FROM})")
-elif SMTP_USER:
-    logger.info(f"Email: SMTP configured (host: {SMTP_HOST}, port: {SMTP_PORT})")
 else:
-    logger.warning("Email: No email provider configured! Set RESEND_API_KEY or SMTP_USER/SMTP_PASS")
+    logger.warning("Email: No email provider configured! Set RESEND_API_KEY")
 
 # In-memory OTP store: { email: { code, expires_at } }
 _otp_store: dict[str, dict] = {}
@@ -349,6 +359,15 @@ class InviteStaffRequest(BaseModel):
     email: EmailStr
     role: str = "staff"   # org_admin | staff
 
+
+class WaitlistRequest(BaseModel):
+    email: EmailStr
+    name: Optional[str] = Field(default=None, max_length=120)
+    company: Optional[str] = Field(default=None, max_length=120)
+    role: Optional[str] = Field(default=None, max_length=80)
+    useCase: Optional[str] = Field(default=None, max_length=500)
+    source: Optional[str] = Field(default=None, max_length=80)
+
 # ============================================================
 # BLAZEPOSE LANDMARK NAMES (33 total)
 # ============================================================
@@ -374,6 +393,32 @@ app = FastAPI(
     description="MediaPipe BlazePose landmark detection for body measurement",
     version="2.0.0",
 )
+
+# ---- Request size limit (default 8 MiB) ----
+MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(8 * 1024 * 1024)))
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests larger than MAX_REQUEST_BYTES.
+
+    Checks Content-Length header up-front (cheap path), and also caps the
+    streamed body size for chunked uploads.
+    """
+    def __init__(self, app, max_bytes: int):
+        super().__init__(app)
+        self.max_bytes = max_bytes
+
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > self.max_bytes:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Request body exceeds {self.max_bytes} bytes"},
+            )
+        return await call_next(request)
+
+
+app.add_middleware(RequestSizeLimitMiddleware, max_bytes=MAX_REQUEST_BYTES)
 
 app.add_middleware(
     CORSMiddleware,
@@ -679,7 +724,7 @@ def init_enterprise_db() -> None:
                 id TEXT PRIMARY KEY,
                 organization_id TEXT,
                 name TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL,
                 role TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
                 created_at TEXT NOT NULL,
@@ -793,10 +838,31 @@ def init_enterprise_db() -> None:
             """
         )
 
+        # Marketing waitlist (public landing page signups)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS waitlist (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                name TEXT,
+                company TEXT,
+                role TEXT,
+                use_case TEXT,
+                source TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         # Performance indexes (no-ops if already present)
         for idx_sql in (
             "CREATE INDEX IF NOT EXISTS idx_org_users_email ON organization_users(email)",
             "CREATE INDEX IF NOT EXISTS idx_org_users_org_id ON organization_users(organization_id)",
+            # Composite uniqueness: an email can repeat across orgs but is
+            # unique within a single org. NULL organization_id (super_admin) is
+            # treated as distinct by Postgres / SQLite, so multiple super_admins
+            # are still prevented by the partial index below.
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_org_users_org_email ON organization_users(organization_id, email)",
             "CREATE INDEX IF NOT EXISTS idx_licenses_org_id ON licenses(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_customers_org_id ON customers(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_customers_org_email ON customers(organization_id, email)",
@@ -806,6 +872,7 @@ def init_enterprise_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON measurement_sessions(customer_id)",
             "CREATE INDEX IF NOT EXISTS idx_billing_org_id ON billing_records(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_billing_paystack_ref ON billing_records(paystack_reference)",
+            "CREATE INDEX IF NOT EXISTS idx_waitlist_created ON waitlist(created_at)",
             # Partial unique: at most one super_admin row in the table
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_one_super_admin ON organization_users(role) WHERE role='super_admin'",
         ):
@@ -813,6 +880,15 @@ def init_enterprise_db() -> None:
                 conn.execute(idx_sql)
             except Exception as exc:
                 logger.warning(f"Index create skipped ({exc}): {idx_sql}")
+
+        # Migration: drop the legacy global UNIQUE on organization_users.email so a
+        # person can belong to multiple orgs. Postgres only — SQLite ALTER cannot
+        # drop constraints, but new SQLite DBs are created without it above.
+        if USE_POSTGRES:
+            try:
+                conn.execute("ALTER TABLE organization_users DROP CONSTRAINT IF EXISTS organization_users_email_key")
+            except Exception as exc:
+                logger.warning(f"Drop legacy organization_users_email_key skipped: {exc}")
         conn.commit()
     finally:
         conn.close()
@@ -1184,6 +1260,77 @@ async def health():
         model_loaded=_detector is not None,
         version="2.0.0",
     )
+
+
+# In-memory IP throttle for the public waitlist endpoint (10/hr/IP).
+_waitlist_ip_hits: dict[str, list[float]] = {}
+
+
+@app.post("/v1/waitlist")
+async def join_waitlist(request: Request, payload: WaitlistRequest):
+    """Public marketing waitlist signup. Rate-limited per IP, dedupes by email."""
+    client_ip = (request.headers.get("x-forwarded-for") or request.client.host or "unknown").split(",")[0].strip()
+    now_ts = time.time()
+    bucket = [t for t in _waitlist_ip_hits.get(client_ip, []) if now_ts - t < 3600]
+    if len(bucket) >= 10:
+        raise HTTPException(status_code=429, detail="Too many signups. Try again later.")
+    bucket.append(now_ts)
+    _waitlist_ip_hits[client_ip] = bucket
+
+    email = payload.email.strip().lower()
+    conn = _enterprise_connection()
+    try:
+        existing = conn.execute("SELECT id FROM waitlist WHERE email = ?", (email,)).fetchone()
+        if existing:
+            return {"success": True, "alreadyJoined": True}
+        conn.execute(
+            "INSERT INTO waitlist (id, email, name, company, role, use_case, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                _new_id("wl"),
+                email,
+                (payload.name or "").strip() or None,
+                (payload.company or "").strip() or None,
+                (payload.role or "").strip() or None,
+                (payload.useCase or "").strip() or None,
+                (payload.source or "landing").strip() or "landing",
+                _enterprise_now(),
+            ),
+        )
+        conn.commit()
+    except Exception as exc:
+        if hasattr(conn, "rollback"):
+            conn.rollback()
+        logger.error(f"waitlist insert failed for {email}: {exc}")
+        raise HTTPException(status_code=500, detail="Could not join waitlist")
+    finally:
+        conn.close()
+
+    # Best-effort confirmation email; never fail the signup if email errors.
+    try:
+        html = (
+            "<div style=\"font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;\">"
+            "<h2 style=\"color:#0F2B3C;\">You're on the Tailor-X waitlist 🎉</h2>"
+            f"<p style=\"color:#5A6B7B;line-height:1.5;\">Thanks{', ' + payload.name if payload.name else ''} — we'll reach out as early access opens for your region.</p>"
+            "<p style=\"color:#5A6B7B;line-height:1.5;\">In the meantime, reply to this email if you'd like a live walkthrough of the platform.</p>"
+            "<p style=\"color:#94A3B8;font-size:12px;margin-top:32px;\">— Tailor-X Team</p>"
+            "</div>"
+        )
+        _send_email(email, "You're on the Tailor-X waitlist", html)
+    except Exception as exc:
+        logger.warning(f"waitlist confirmation email failed for {email}: {exc}")
+
+    return {"success": True, "alreadyJoined": False}
+
+
+@app.get("/v1/waitlist/stats")
+async def waitlist_stats():
+    """Public count for social proof on the landing page."""
+    conn = _enterprise_connection()
+    try:
+        row = conn.execute("SELECT COUNT(*) AS c FROM waitlist").fetchone()
+        return {"count": int(row["c"]) if row else 0}
+    finally:
+        conn.close()
 
 
 @app.post("/v1/enterprise/bootstrap")
@@ -3112,7 +3259,7 @@ async def detect_pose_refined(
 def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
     """Send an email via Resend HTTP API (works on Railway/cloud platforms)."""
     if not RESEND_API_KEY:
-        logger.warning("RESEND_API_KEY not set, skipping Resend")
+        logger.warning("RESEND_API_KEY not set, cannot send email")
         return False
 
     try:
@@ -3139,40 +3286,9 @@ def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
         return False
 
 
-def _send_email_smtp(to_email: str, subject: str, html_body: str) -> bool:
-    """Send an email via SMTP (fallback for non-Railway environments)."""
-    if not SMTP_USER or not SMTP_PASS:
-        logger.error("SMTP_USER and SMTP_PASS must be set to send emails")
-        return False
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = SMTP_FROM or SMTP_USER
-    msg["To"] = to_email
-    msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        if SMTP_PORT == 465:
-            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
-                server.login(SMTP_USER, SMTP_PASS)
-                server.sendmail(SMTP_USER, to_email, msg.as_string())
-        else:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.sendmail(SMTP_USER, to_email, msg.as_string())
-        logger.info(f"OTP email sent via SMTP to {to_email}")
-        return True
-    except Exception as e:
-        logger.error(f"SMTP failed for {to_email}: {e}")
-        return False
-
-
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    """Send email via Resend (primary) or SMTP (fallback)."""
-    if RESEND_API_KEY:
-        return _send_email_resend(to_email, subject, html_body)
-    return _send_email_smtp(to_email, subject, html_body)
+    """Send transactional email via Resend."""
+    return _send_email_resend(to_email, subject, html_body)
 
 
 @app.post("/v1/auth/send-otp")
@@ -3206,7 +3322,7 @@ async def send_otp(req: OTPSendRequest):
 
     sent = _send_email(email, f"Your Tailor-XFit code: {code}", html)
     if not sent:
-        raise HTTPException(status_code=500, detail="Failed to send email. Check server SMTP config.")
+        raise HTTPException(status_code=500, detail="Failed to send email. Check RESEND_API_KEY config.")
 
     return {"success": True, "message": "Verification code sent"}
 
