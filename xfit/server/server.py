@@ -1068,12 +1068,18 @@ def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> 
     }
 
 
-def _init_enterprise_db_with_retry(max_attempts: int = 6, delay_seconds: float = 3.0) -> None:
+_DB_SCHEMA_READY = False
+
+
+def _init_enterprise_db_with_retry(max_attempts: int = 6, delay_seconds: float = 3.0) -> bool:
     """Initialize the DB, retrying briefly if Postgres isn't reachable yet.
 
-    Railway's private DNS can take a few seconds to become resolvable on first
-    boot; without retries the app would crash immediately and Railway would
-    rollback the deploy."""
+    Returns True on success, False if all retries are exhausted. Never raises:
+    the app must stay up so /livez and /readyz can report status even when
+    Postgres is temporarily unreachable (e.g. Railway private-DNS outage).
+    Schema init will be re-attempted lazily on the next successful DB query.
+    """
+    global _DB_SCHEMA_READY
     last_exc = None
     for attempt in range(1, max_attempts + 1):
         try:
@@ -1082,7 +1088,8 @@ def _init_enterprise_db_with_retry(max_attempts: int = 6, delay_seconds: float =
                 logger.info(f"Enterprise DB initialized via Postgres (attempt {attempt})")
             else:
                 logger.info(f"Enterprise DB initialized via SQLite at {ENTERPRISE_DB_PATH}")
-            return
+            _DB_SCHEMA_READY = True
+            return True
         except Exception as exc:
             last_exc = exc
             logger.warning(
@@ -1090,8 +1097,24 @@ def _init_enterprise_db_with_retry(max_attempts: int = 6, delay_seconds: float =
             )
             if attempt < max_attempts:
                 time.sleep(delay_seconds)
-    logger.error(f"DB init exhausted retries; last error: {last_exc}")
-    raise last_exc
+    logger.error(
+        f"DB init exhausted retries; last error: {last_exc}. "
+        f"App will start anyway; schema init will be retried lazily."
+    )
+    return False
+
+
+def _ensure_db_schema() -> None:
+    """Lazy schema init for callers that need a ready DB. Best-effort, swallows errors."""
+    global _DB_SCHEMA_READY
+    if _DB_SCHEMA_READY:
+        return
+    try:
+        init_enterprise_db()
+        _DB_SCHEMA_READY = True
+        logger.info("Enterprise DB schema initialized lazily after startup")
+    except Exception as exc:
+        logger.debug(f"Lazy DB schema init still failing: {exc}")
 
 
 _init_enterprise_db_with_retry()
@@ -1287,7 +1310,7 @@ async def readyz():
     """
     components: dict[str, dict] = {}
 
-    # DB probe
+    # DB probe (and lazy schema init if startup couldn't reach Postgres)
     db_started = time.time()
     try:
         conn = _enterprise_connection()
@@ -1297,11 +1320,17 @@ async def readyz():
             conn.close()
         components["database"] = {
             "ok": True,
+            "schema_ready": _DB_SCHEMA_READY,
             "latency_ms": int((time.time() - db_started) * 1000),
         }
+        # DB is reachable now — finish schema init if startup couldn't.
+        if not _DB_SCHEMA_READY:
+            _ensure_db_schema()
+            components["database"]["schema_ready"] = _DB_SCHEMA_READY
     except Exception as exc:
         components["database"] = {
             "ok": False,
+            "schema_ready": _DB_SCHEMA_READY,
             "error": str(exc)[:200],
             "latency_ms": int((time.time() - db_started) * 1000),
         }
