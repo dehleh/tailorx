@@ -16,7 +16,7 @@ npm run dev   # http://localhost:3002
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `https://tailorx-pose-api-production.up.railway.app` | FastAPI backend (waitlist endpoints) |
 | `NEXT_PUBLIC_ADMIN_URL` | `https://tailorx-admin-production.up.railway.app` | Admin dashboard sign-in link |
-| `NEXT_PUBLIC_SITE_URL`  | `https://tailor-xfit.app` | Public canonical URL (for OG metadata) |
+| `NEXT_PUBLIC_SITE_URL`  | `https://tailorxfit.com` | Public canonical URL (for OG metadata) |
 
 ## Backend endpoints used
 

@@ -1,32 +1,30 @@
 import axios from 'axios';
-import Cookies from 'js-cookie';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://tailorx-pose-api-production.up.railway.app';
-
-export const api = axios.create({ baseURL: API_URL });
-
-api.interceptors.request.use((config) => {
-  const token = Cookies.get('tailorx_admin_token');
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`;
-  }
-  return config;
-});
+// All requests go to our Next.js API routes:
+//  - /api/admin/auth/*    : explicit auth handlers (set HttpOnly cookies)
+//  - /api/admin/proxy/*   : catch-all that forwards to FastAPI with bearer
+//                           pulled from the HttpOnly cookie server-side.
+export const api = axios.create({ baseURL: '/api/admin/proxy' });
 
 export interface AdminUser {
-  token: string;
+  // token is no longer exposed to the client; it lives in an HttpOnly cookie
   role: 'org_owner' | 'org_admin' | 'staff' | 'super_admin';
   organizationId: string | null;
   name: string;
   email: string;
 }
 
-// Auth
+// Auth — these bypass the proxy because they manage cookies directly.
 export const sendAdminOTP = (email: string) =>
-  api.post('/v1/auth/admin/send-otp', { email });
+  axios.post('/api/admin/auth/send-otp', { email });
 
 export const verifyAdminOTP = (email: string, code: string): Promise<{ data: AdminUser }> =>
-  api.post('/v1/auth/admin/verify-otp', { email, code });
+  axios.post('/api/admin/auth/verify-otp', { email, code });
+
+export const logoutAdmin = () => axios.post('/api/admin/auth/logout');
+
+export const fetchCurrentAdmin = (): Promise<{ data: { user: AdminUser | null } }> =>
+  axios.get('/api/admin/auth/me');
 
 // Org Dashboard
 export const getOrgDashboard = (orgId: string) =>

@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 /**
  * Local Storage Service
- * Handles all local data persistence using AsyncStorage
+ * Handles all local data persistence using AsyncStorage.
+ * Sensitive items (auth token) go through expo-secure-store, which uses
+ * the iOS Keychain / Android Keystore instead of plain-text AsyncStorage.
  */
 
 class StorageService {
@@ -100,24 +103,38 @@ class StorageService {
   }
 
   /**
-   * Save auth token
+   * Save auth token (Keychain / Keystore via expo-secure-store)
    */
   async saveAuthToken(token: string): Promise<void> {
-    await this.save(this.KEYS.AUTH_TOKEN, token);
+    try {
+      await SecureStore.setItemAsync(this.KEYS.AUTH_TOKEN, token);
+    } catch (error) {
+      console.error('Failed to save auth token to secure store:', error);
+      throw new Error('Auth token save failed');
+    }
   }
 
   /**
    * Load auth token
    */
   async loadAuthToken(): Promise<string | null> {
-    return this.load<string>(this.KEYS.AUTH_TOKEN);
+    try {
+      return await SecureStore.getItemAsync(this.KEYS.AUTH_TOKEN);
+    } catch (error) {
+      console.error('Failed to load auth token from secure store:', error);
+      return null;
+    }
   }
 
   /**
    * Remove auth token
    */
   async removeAuthToken(): Promise<void> {
-    await this.remove(this.KEYS.AUTH_TOKEN);
+    try {
+      await SecureStore.deleteItemAsync(this.KEYS.AUTH_TOKEN);
+    } catch (error) {
+      console.error('Failed to remove auth token from secure store:', error);
+    }
   }
 
   /**

@@ -2,8 +2,8 @@ export default function Footer() {
   const adminUrl = process.env.NEXT_PUBLIC_ADMIN_URL || 'https://tailorx-admin-production.up.railway.app';
   return (
     <footer className="border-t border-mist bg-white">
-      <div className="mx-auto grid max-w-7xl gap-10 px-6 py-16 md:grid-cols-4">
-        <div>
+      <div className="mx-auto grid max-w-7xl gap-10 px-6 py-16 md:grid-cols-5">
+        <div className="md:col-span-2">
           <div className="flex items-center gap-2 font-display text-xl font-bold text-ink">
             <span className="inline-block h-7 w-7 rounded-md bg-gradient-to-br from-accent to-ink" aria-hidden />
             Tailor-X
@@ -21,12 +21,36 @@ export default function Footer() {
         <FooterCol title="Company" links={[
           { label: 'Waitlist', href: '#waitlist' },
           { label: 'Sign in', href: adminUrl },
-          { label: 'Contact', href: 'mailto:hello@tailor-xfit.app' },
-        ]} />
-        <FooterCol title="Legal" links={[
           { label: 'Privacy', href: '/privacy' },
           { label: 'Terms', href: '/terms' },
         ]} />
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-ink">Contact</p>
+          <ul className="mt-4 space-y-2 text-sm text-slate1">
+            <li>
+              <a href="mailto:info@tailorxfit.com" className="transition hover:text-ink">
+                info@tailorxfit.com
+              </a>
+              <span className="block text-xs text-slate2">General &amp; enquiries</span>
+            </li>
+            <li>
+              <a href="mailto:enquiry@tailorxfit.com" className="transition hover:text-ink">
+                enquiry@tailorxfit.com
+              </a>
+              <span className="block text-xs text-slate2">Waitlist &amp; early access</span>
+            </li>
+            <li>
+              <a href="tel:+2348137446304" className="transition hover:text-ink">
+                +234 813 744 6304
+              </a>
+            </li>
+            <li className="text-xs leading-relaxed text-slate2">
+              5 C &amp; I Leasing Dr,<br />
+              Lekki Phase I,<br />
+              Lagos 106104, Nigeria
+            </li>
+          </ul>
+        </div>
       </div>
       <div className="border-t border-mist py-6">
         <p className="text-center text-xs text-slate2">

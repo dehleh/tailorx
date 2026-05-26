@@ -1,20 +1,19 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import Cookies from 'js-cookie';
-import { AdminUser } from './api';
+import { AdminUser, fetchCurrentAdmin, logoutAdmin } from './api';
 
 interface AuthContextType {
   user: AdminUser | null;
   login: (user: AdminUser) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   login: () => {},
-  logout: () => {},
+  logout: async () => {},
   isLoading: true,
 });
 
@@ -23,36 +22,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = Cookies.get('tailorx_admin_user');
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        Cookies.remove('tailorx_admin_user');
-        Cookies.remove('tailorx_admin_token');
-      }
-    }
-    setIsLoading(false);
+    // The auth token now lives in an HttpOnly cookie that JS cannot read.
+    // We hydrate the user object via /api/admin/auth/me, which the server
+    // reads from the (also HttpOnly) user cookie.
+    let cancelled = false;
+    fetchCurrentAdmin()
+      .then((res) => {
+        if (!cancelled) setUser(res.data.user ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = (adminUser: AdminUser) => {
-    // Cookies are restricted to HTTPS in production (secure flag) and same-site
-    // strict to mitigate CSRF. Note: js-cookie cannot set HttpOnly (browser-side
-    // limitation) — moving to a server-side session is the next hardening step.
-    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    const opts: Cookies.CookieAttributes = {
-      expires: 1,
-      sameSite: 'strict',
-      secure: isHttps,
-    };
-    Cookies.set('tailorx_admin_token', adminUser.token, opts);
-    Cookies.set('tailorx_admin_user', JSON.stringify(adminUser), opts);
+    // Cookies were already set HttpOnly by /api/admin/auth/verify-otp.
     setUser(adminUser);
   };
 
-  const logout = () => {
-    Cookies.remove('tailorx_admin_token');
-    Cookies.remove('tailorx_admin_user');
+  const logout = async () => {
+    try {
+      await logoutAdmin();
+    } catch {
+      // Best-effort — clear local state regardless
+    }
     setUser(null);
   };
 

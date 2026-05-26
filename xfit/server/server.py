@@ -82,7 +82,9 @@ SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "selfie_segm
 
 # Email config for OTP (Resend HTTP API only — SMTP support removed)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-RESEND_FROM = os.environ.get("RESEND_FROM", "Tailor-XFit <onboarding@resend.dev>")  # Verify domain on Resend for custom sender
+RESEND_FROM = os.environ.get("RESEND_FROM", "Tailor-X <info@tailorxfit.com>")  # Default sender for transactional/auth emails
+RESEND_FROM_WAITLIST = os.environ.get("RESEND_FROM_WAITLIST", "Tailor-X Waitlist <enquiry@tailorxfit.com>")  # Sender for marketing waitlist confirmations
+WAITLIST_ADMIN_EMAIL = os.environ.get("WAITLIST_ADMIN_EMAIL", "enquiry@tailorxfit.com")  # Inbox that receives a copy of every signup
 ENTERPRISE_DB_PATH = os.environ.get(
     "ENTERPRISE_DB_PATH",
     os.path.join(os.path.dirname(__file__), "enterprise.db"),
@@ -121,12 +123,12 @@ PAYSTACK_PLAN_STARTER = os.environ.get("PAYSTACK_PLAN_STARTER", "")     # plan c
 PAYSTACK_PLAN_GROWTH = os.environ.get("PAYSTACK_PLAN_GROWTH", "")
 PAYSTACK_PLAN_ENTERPRISE = os.environ.get("PAYSTACK_PLAN_ENTERPRISE", "")
 PAYSTACK_API_BASE = os.environ.get("PAYSTACK_API_BASE", "https://api.paystack.co")
-WEB_APP_URL = os.environ.get("WEB_APP_URL", "https://admin.tailor-xfit.app")
+WEB_APP_URL = os.environ.get("WEB_APP_URL", "https://admin.tailorxfit.com")
 OVERAGE_SCAN_PRICE = float(os.environ.get("TAILORX_OVERAGE_SCAN_PRICE", "500"))   # in major currency units
 OVERAGE_GRACE_SCANS = int(os.environ.get("TAILORX_OVERAGE_GRACE_SCANS", "25"))
 
 # CORS allowlist — comma-separated list of allowed origins. Defaults to web app + localhost dev.
-_default_origins = f"{WEB_APP_URL},https://tailor-xfit.app,https://www.tailor-xfit.app,http://localhost:3000,http://localhost:3001,http://localhost:19006"
+_default_origins = f"{WEB_APP_URL},https://tailorxfit.com,https://www.tailorxfit.com,https://tailorx-landing-production.up.railway.app,http://localhost:3000,http://localhost:3001,http://localhost:19006"
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get("TAILORX_ALLOWED_ORIGINS", _default_origins).split(",")
@@ -1059,7 +1061,7 @@ def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> 
         "inviteLinks": [
             {
                 **dict(row),
-                "publicUrl": f"https://tailor-xfit.app/invite/{row['code']}",
+                "publicUrl": f"https://tailorxfit.com/invite/{row['code']}",
             }
             for row in invite_links
         ],
@@ -1192,7 +1194,7 @@ def _paystack_initialize_transaction(
     plan_code = PAYSTACK_PLAN_MAP.get(plan_tier)
     reference = f"tlx_{secrets.token_hex(8)}"
     payload: dict[str, Any] = {
-        "email": customer_email or f"billing+{org_id}@tailor-xfit.app",
+        "email": customer_email or f"billing+{org_id}@tailorxfit.com",
         # Paystack expects amounts in the lowest currency unit (kobo, cents, pesewas)
         "amount": int(round(amount * 100)),
         "currency": currency.upper(),
@@ -1262,6 +1264,66 @@ async def health():
     )
 
 
+# Process-start timestamp for uptime reporting.
+_PROCESS_STARTED_AT = time.time()
+
+
+@app.get("/livez")
+async def livez():
+    """Liveness probe: 200 if the FastAPI process is up. Does NOT check DB.
+
+    Point UptimeRobot / Better Stack at this to detect *app* outages.
+    DB outages are reported separately via /readyz so you can distinguish.
+    """
+    return {"status": "alive", "uptime_seconds": int(time.time() - _PROCESS_STARTED_AT)}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness probe: per-component status, always returns 200 with a JSON body.
+
+    Use this for a status page or richer alerting. The `ready` boolean is False
+    if any critical dependency is down (currently just the DB).
+    """
+    components: dict[str, dict] = {}
+
+    # DB probe
+    db_started = time.time()
+    try:
+        conn = _enterprise_connection()
+        try:
+            conn.execute("SELECT 1").fetchone()
+        finally:
+            conn.close()
+        components["database"] = {
+            "ok": True,
+            "latency_ms": int((time.time() - db_started) * 1000),
+        }
+    except Exception as exc:
+        components["database"] = {
+            "ok": False,
+            "error": str(exc)[:200],
+            "latency_ms": int((time.time() - db_started) * 1000),
+        }
+
+    # Pose model loaded into memory
+    components["pose_model"] = {"ok": _detector is not None}
+
+    # Email provider configured (does not call Resend, just checks env)
+    components["email"] = {
+        "ok": bool(RESEND_API_KEY),
+        "provider": "resend" if RESEND_API_KEY else None,
+    }
+
+    ready = all(c.get("ok", False) for k, c in components.items() if k == "database")
+    return {
+        "ready": ready,
+        "version": "2.0.0",
+        "uptime_seconds": int(time.time() - _PROCESS_STARTED_AT),
+        "components": components,
+    }
+
+
 # In-memory IP throttle for the public waitlist endpoint (10/hr/IP).
 _waitlist_ip_hits: dict[str, list[float]] = {}
 
@@ -1312,12 +1374,45 @@ async def join_waitlist(request: Request, payload: WaitlistRequest):
             "<h2 style=\"color:#0F2B3C;\">You're on the Tailor-X waitlist 🎉</h2>"
             f"<p style=\"color:#5A6B7B;line-height:1.5;\">Thanks{', ' + payload.name if payload.name else ''} — we'll reach out as early access opens for your region.</p>"
             "<p style=\"color:#5A6B7B;line-height:1.5;\">In the meantime, reply to this email if you'd like a live walkthrough of the platform.</p>"
-            "<p style=\"color:#94A3B8;font-size:12px;margin-top:32px;\">— Tailor-X Team</p>"
+            "<p style=\"color:#94A3B8;font-size:12px;margin-top:32px;\">— Tailor-X Team<br/>"
+            "5 C &amp; I Leasing Dr, Lekki Phase I, Lagos 106104, Nigeria<br/>"
+            "+234 813 744 6304 &middot; <a href=\"https://tailorxfit.com\" style=\"color:#14B8A6;\">tailorxfit.com</a></p>"
             "</div>"
         )
-        _send_email(email, "You're on the Tailor-X waitlist", html)
+        _send_email(email, "You're on the Tailor-X waitlist", html, from_email=RESEND_FROM_WAITLIST)
     except Exception as exc:
         logger.warning(f"waitlist confirmation email failed for {email}: {exc}")
+
+    # Best-effort admin notification so the team sees new signups in real time.
+    if WAITLIST_ADMIN_EMAIL:
+        try:
+            def _esc(v: str | None) -> str:
+                import html as _html
+                return _html.escape((v or "").strip()) or "—"
+
+            admin_html = (
+                "<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;\">"
+                "<h2 style=\"color:#0F2B3C;margin:0 0 16px;\">New Tailor-X waitlist signup</h2>"
+                "<table style=\"width:100%;border-collapse:collapse;font-size:14px;color:#0F2B3C;\">"
+                f"<tr><td style=\"padding:6px 0;color:#64748B;width:120px;\">Email</td><td><a href=\"mailto:{_esc(email)}\">{_esc(email)}</a></td></tr>"
+                f"<tr><td style=\"padding:6px 0;color:#64748B;\">Name</td><td>{_esc(payload.name)}</td></tr>"
+                f"<tr><td style=\"padding:6px 0;color:#64748B;\">Company</td><td>{_esc(payload.company)}</td></tr>"
+                f"<tr><td style=\"padding:6px 0;color:#64748B;\">Role</td><td>{_esc(payload.role)}</td></tr>"
+                f"<tr><td style=\"padding:6px 0;color:#64748B;\">Use case</td><td>{_esc(payload.useCase)}</td></tr>"
+                f"<tr><td style=\"padding:6px 0;color:#64748B;\">Source</td><td>{_esc(payload.source)}</td></tr>"
+                f"<tr><td style=\"padding:6px 0;color:#64748B;\">IP</td><td>{_esc(client_ip)}</td></tr>"
+                "</table>"
+                "<p style=\"color:#94A3B8;font-size:12px;margin-top:24px;\">Tailor-X notification &middot; Reply directly to follow up with the signup.</p>"
+                "</div>"
+            )
+            _send_email(
+                WAITLIST_ADMIN_EMAIL,
+                f"New waitlist signup: {email}",
+                admin_html,
+                from_email=RESEND_FROM_WAITLIST,
+            )
+        except Exception as exc:
+            logger.warning(f"waitlist admin notification failed for {email}: {exc}")
 
     return {"success": True, "alreadyJoined": False}
 
@@ -1497,7 +1592,7 @@ async def create_invite_link(
         return {
             "id": invite_id,
             "code": invite_code,
-            "publicUrl": f"https://tailor-xfit.app/invite/{invite_code}",
+            "publicUrl": f"https://tailorxfit.com/invite/{invite_code}",
             "label": request.label,
         }
     finally:
@@ -3256,8 +3351,11 @@ async def detect_pose_refined(
 # EMAIL OTP ENDPOINTS
 # ============================================================
 
-def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
-    """Send an email via Resend HTTP API (works on Railway/cloud platforms)."""
+def _send_email_resend(to_email: str, subject: str, html_body: str, from_email: Optional[str] = None) -> bool:
+    """Send an email via Resend HTTP API (works on Railway/cloud platforms).
+
+    `from_email` overrides the default RESEND_FROM sender for this message.
+    """
     if not RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not set, cannot send email")
         return False
@@ -3266,7 +3364,7 @@ def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
         resp = http_requests.post(
             "https://api.resend.com/emails",
             json={
-                "from": RESEND_FROM,
+                "from": from_email or RESEND_FROM,
                 "to": [to_email],
                 "subject": subject,
                 "html": html_body,
@@ -3277,7 +3375,7 @@ def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
             timeout=10,
         )
         if resp.status_code in (200, 201):
-            logger.info(f"OTP email sent via Resend to {to_email}")
+            logger.info(f"Email sent via Resend to {to_email} (from={from_email or RESEND_FROM})")
             return True
         logger.error(f"Resend returned {resp.status_code}: {resp.text}")
         return False
@@ -3286,9 +3384,9 @@ def _send_email_resend(to_email: str, subject: str, html_body: str) -> bool:
         return False
 
 
-def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    """Send transactional email via Resend."""
-    return _send_email_resend(to_email, subject, html_body)
+def _send_email(to_email: str, subject: str, html_body: str, from_email: Optional[str] = None) -> bool:
+    """Send transactional email via Resend. Pass `from_email` to override the default sender."""
+    return _send_email_resend(to_email, subject, html_body, from_email=from_email)
 
 
 @app.post("/v1/auth/send-otp")

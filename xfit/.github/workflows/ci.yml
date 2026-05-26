@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  mobile:
+    name: Mobile (Jest + tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xfit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: xfit/package-lock.json
+      - name: Install
+        run: npm ci || npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test -- --ci --coverage=false
+
+  admin:
+    name: Admin dashboard (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xfit/admin-dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: xfit/admin-dashboard/package-lock.json
+      - name: Install
+        run: npm ci || npm install
+      - name: Typecheck
+        run: npm run type-check
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://tailorx-pose-api-production.up.railway.app
