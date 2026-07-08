@@ -26,6 +26,7 @@ export type ScanStackParamList = {
     calibration?: any;
     knownHeight?: number;
     anchorMeasurement?: { key: string; valueCm: number };
+    initialStep?: 'front' | 'side' | 'back';
   } | undefined;
   Calibration: {
     onComplete?: (calibration: any) => void;
@@ -34,6 +35,8 @@ export type ScanStackParamList = {
   MultiCapture: {
     calibration?: any;
     knownHeight?: number;
+    anchorMeasurement?: { key: string; valueCm: number };
+    initialStep?: 'front' | 'side' | 'back';
   };
   Processing: {
     result: any;

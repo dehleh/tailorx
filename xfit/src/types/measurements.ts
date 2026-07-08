@@ -33,6 +33,8 @@ export interface BodyMeasurement {
     circumferenceSource?: string;
     missingRequiredAngles?: string[];
     calibrationConfidence?: number;
+    contourConfidenceByPart?: Record<string, number>;
+    anchorMeasurement?: { key: string; valueCm: number };
     engineVersion: string;
     processingTimeMs: number;
     warnings: string[];

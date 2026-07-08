@@ -66,6 +66,7 @@ Test each participant under realistic conditions:
 Use the local harness to turn study exports into MAE, median error, P90/P95 error, and failure rate by body part.
 
 ```bash
+npm run benchmark:accuracy:template > study-template.csv
 npm run benchmark:accuracy -- study.json
 npm run benchmark:accuracy -- study.csv --json
 npm run benchmark:accuracy -- --demo

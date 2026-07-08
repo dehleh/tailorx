@@ -121,6 +121,78 @@ export default function ScanResultsScreen({
       : `${round1(cm / 2.54)} in`;
   };
 
+  const precomputedMeasurementGrid = useMemo(() => {
+    if (!result?.measurements) return [];
+    return Object.entries(result.measurements)
+      .filter(([_, value]) => value > 0)
+      .map(([key, value]) => {
+        const meta = MEASUREMENT_META[key] || { icon: 'M', label: key };
+        return { key, label: meta.label, icon: meta.icon, value, isWeight: meta.isWeight };
+      });
+  }, [result]);
+
+  const precomputedSizeResult: SizeLookupResult | null = useMemo(() => {
+    if (!result?.measurements || Object.keys(result.measurements).length === 0) return null;
+    const gender = (userProfile?.gender as 'male' | 'female' | 'other') || 'other';
+    return lookupSize(result.measurements, gender);
+  }, [result, userProfile]);
+
+  const lowConfidenceEntries = useMemo(() => {
+    if (!result?.confidence || !result?.measurements) return [];
+
+    return Object.entries(result.confidence)
+      .filter(([key, value]) => {
+        const measurement = result.measurements[key];
+        return typeof measurement === 'number' && measurement > 0 && value < 60;
+      })
+      .sort((a, b) => a[1] - b[1])
+      .slice(0, 4);
+  }, [result]);
+
+  const weakContourParts = useMemo(() => {
+    const contourConfidence = result?.metadata?.contourConfidenceByPart;
+    if (!contourConfidence) return [];
+
+    return Object.entries(contourConfidence)
+      .filter(([_, value]) => value < 55)
+      .sort((a, b) => a[1] - b[1])
+      .map(([key]) => MEASUREMENT_META[key]?.label || key)
+      .slice(0, 4);
+  }, [result]);
+
+  const reviewItems = useMemo(() => {
+    if (!result) return [];
+
+    const items: string[] = [];
+    const missingAngles = result.metadata?.missingRequiredAngles || [];
+    if (missingAngles.length > 0) {
+      items.push(`Missing required angle: ${missingAngles.join(', ')}`);
+    }
+
+    if (lowConfidenceEntries.length > 0) {
+      const labels = lowConfidenceEntries
+        .map(([key, value]) => `${MEASUREMENT_META[key]?.label || key} ${value}%`)
+        .join(', ');
+      items.push(`Low estimate confidence: ${labels}`);
+    }
+
+    if (weakContourParts.length > 0) {
+      items.push(`Weak silhouette signal: ${weakContourParts.join(', ')}`);
+    }
+
+    if (result.metadata?.calibrationConfidence !== undefined && result.metadata.calibrationConfidence < 60) {
+      items.push(`Calibration confidence is ${result.metadata.calibrationConfidence}%`);
+    }
+
+    if (result.warnings?.length > 0) {
+      items.push(result.warnings[0]);
+    }
+
+    return items;
+  }, [result, lowConfidenceEntries, weakContourParts]);
+
+  const needsReview = !!result && (result.overallAccuracy < 70 || reviewItems.length > 0);
+
   // If params are missing, show fallback instead of crashing
   if (!result || !result.measurements) {
     return (
@@ -142,6 +214,7 @@ export default function ScanResultsScreen({
     );
   }
 
+  /*
   const measurementGrid = useMemo(() => {
     return Object.entries(result.measurements)
       .filter(([_, value]) => value > 0)
@@ -156,6 +229,9 @@ export default function ScanResultsScreen({
     if (!result.measurements || Object.keys(result.measurements).length === 0) return null;
     return lookupSize(result.measurements, gender);
   }, [result, userProfile]);
+  */
+  const measurementGrid = precomputedMeasurementGrid;
+  const sizeResult = precomputedSizeResult;
 
   const handleSave = async () => {
     if (saved) return;
@@ -170,6 +246,11 @@ export default function ScanResultsScreen({
         confidence: result.confidence,
         anglesUsed: result.metadata.anglesUsed,
         calibrationMethod: result.metadata.calibrationMethod,
+        circumferenceSource: result.metadata.circumferenceSource,
+        missingRequiredAngles: result.metadata.missingRequiredAngles,
+        calibrationConfidence: result.metadata.calibrationConfidence,
+        contourConfidenceByPart: result.metadata.contourConfidenceByPart,
+        anchorMeasurement: result.metadata.anchorMeasurement,
         engineVersion: result.metadata.engineVersion,
         processingTimeMs: result.metadata.processingTimeMs,
         warnings: result.warnings,
@@ -206,6 +287,36 @@ export default function ScanResultsScreen({
         <View style={styles.silhouetteSection}>
           <Text style={styles.silhouetteIcon}>🧍</Text>
         </View>
+
+        {needsReview && (
+          <View style={styles.reviewCard}>
+            <View style={styles.reviewHeaderRow}>
+              <Text style={styles.reviewIcon}>!</Text>
+              <View style={styles.reviewTextContent}>
+                <Text style={styles.reviewTitle}>Review recommended</Text>
+                <Text style={styles.reviewDesc}>
+                  Some measurements need another look before you use them for fit decisions.
+                </Text>
+              </View>
+            </View>
+
+            {reviewItems.slice(0, 4).map((item, index) => (
+              <Text key={`${item}-${index}`} style={styles.reviewIssue}>
+                <Text style={styles.reviewBullet}>- </Text>
+                {item}
+              </Text>
+            ))}
+
+            <View style={styles.reviewActions}>
+              <TouchableOpacity style={styles.reviewPrimaryButton} onPress={handleRescan}>
+                <Text style={styles.reviewPrimaryText}>Retake scan</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.reviewSecondaryButton} onPress={() => setDetailsExpanded(true)}>
+                <Text style={styles.reviewSecondaryText}>View details</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Measurements heading */}
         <Text style={styles.measurementsTitle}>Your Measurements</Text>
@@ -317,6 +428,30 @@ export default function ScanResultsScreen({
               <Text style={styles.detailsKey}>Contour: </Text>
               {result.metadata.contourUsed ? 'Yes ✔' : 'No (skeleton only)'}
             </Text>
+            {result.metadata.circumferenceSource && (
+              <Text style={styles.detailsRow}>
+                <Text style={styles.detailsKey}>Circumference source: </Text>
+                {result.metadata.circumferenceSource}
+              </Text>
+            )}
+            {result.metadata.calibrationConfidence !== undefined && (
+              <Text style={styles.detailsRow}>
+                <Text style={styles.detailsKey}>Calibration confidence: </Text>
+                {result.metadata.calibrationConfidence}%
+              </Text>
+            )}
+            {result.metadata.anchorMeasurement && (
+              <Text style={styles.detailsRow}>
+                <Text style={styles.detailsKey}>Anchor: </Text>
+                {MEASUREMENT_META[result.metadata.anchorMeasurement.key]?.label || result.metadata.anchorMeasurement.key} {result.metadata.anchorMeasurement.valueCm}cm
+              </Text>
+            )}
+            {result.metadata.missingRequiredAngles && result.metadata.missingRequiredAngles.length > 0 && (
+              <Text style={styles.detailsRow}>
+                <Text style={styles.detailsKey}>Missing angles: </Text>
+                {result.metadata.missingRequiredAngles.join(', ')}
+              </Text>
+            )}
             <Text style={styles.detailsRow}>
               <Text style={styles.detailsKey}>Processing: </Text>
               {result.metadata.processingTimeMs}ms
@@ -344,6 +479,18 @@ export default function ScanResultsScreen({
                 {v}%
               </Text>
             ))}
+
+            {result.metadata.contourConfidenceByPart && (
+              <>
+                <Text style={[styles.detailsKey, { marginTop: 10, marginBottom: 4 }]}>Contour confidence:</Text>
+                {Object.entries(result.metadata.contourConfidenceByPart).map(([k, v]) => (
+                  <Text key={k} style={styles.detailsRow}>
+                    <Text style={styles.detailsKey}>{MEASUREMENT_META[k]?.label || k}: </Text>
+                    {v}%
+                  </Text>
+                ))}
+              </>
+            )}
           </View>
         )}
 
@@ -432,6 +579,86 @@ const styles = StyleSheet.create({
   silhouetteIcon: {
     fontSize: 64,
     opacity: 0.4,
+  },
+  reviewCard: {
+    backgroundColor: '#FFF7ED',
+    marginHorizontal: 20,
+    marginBottom: 18,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+  },
+  reviewHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  reviewIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F97316',
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginRight: 10,
+  },
+  reviewTextContent: {
+    flex: 1,
+  },
+  reviewTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#7C2D12',
+    marginBottom: 3,
+  },
+  reviewDesc: {
+    fontSize: 13,
+    color: '#9A3412',
+    lineHeight: 18,
+  },
+  reviewIssue: {
+    fontSize: 12,
+    color: '#7C2D12',
+    lineHeight: 18,
+    marginBottom: 3,
+  },
+  reviewBullet: {
+    fontWeight: '700',
+  },
+  reviewActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  reviewPrimaryButton: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: '#F97316',
+    alignItems: 'center',
+  },
+  reviewPrimaryText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  reviewSecondaryButton: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+  },
+  reviewSecondaryText: {
+    color: '#9A3412',
+    fontSize: 13,
+    fontWeight: '700',
   },
   measurementsTitle: {
     fontSize: 18,

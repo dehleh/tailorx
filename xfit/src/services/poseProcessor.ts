@@ -61,6 +61,17 @@ const BLAZEPOSE_LANDMARK_NAMES = [
   'left_foot_index', 'right_foot_index',
 ];
 
+const SHOULD_LOG_DIAGNOSTICS = process.env.NODE_ENV !== 'test';
+const poseLog = (...args: Parameters<typeof console.log>) => {
+  if (SHOULD_LOG_DIAGNOSTICS) console.log(...args);
+};
+const poseWarn = (...args: Parameters<typeof console.warn>) => {
+  if (SHOULD_LOG_DIAGNOSTICS) console.warn(...args);
+};
+const poseInfo = (...args: Parameters<typeof console.info>) => {
+  if (SHOULD_LOG_DIAGNOSTICS) console.info(...args);
+};
+
 // ============================================================
 // POSE PROCESSOR
 // ============================================================
@@ -90,45 +101,45 @@ class PoseProcessor {
       this.isCloudAvailable === false &&
       Date.now() - this.lastCloudFailure > PoseProcessor.CLOUD_RETRY_INTERVAL_MS
     ) {
-      console.log('[PoseProcessor] Resetting cloud availability for retry');
+      poseLog('[PoseProcessor] Resetting cloud availability for retry');
       this.isCloudAvailable = null;
     }
 
     // Try cloud processing first (highest-confidence mode)
     if (this.isCloudAvailable !== false) {
       try {
-        console.log('[PoseProcessor] Attempting cloud processing at:', this.cloudConfig.apiUrl);
+        poseLog('[PoseProcessor] Attempting cloud processing at:', this.cloudConfig.apiUrl);
         const result = await this.processWithCloud(imageUri, captureType);
         this.isCloudAvailable = true;
-        console.log('[PoseProcessor] Cloud processing succeeded, confidence:', result.confidence);
+        poseLog('[PoseProcessor] Cloud processing succeeded, confidence:', result.confidence);
         return {
           ...result,
           processingTimeMs: Date.now() - startTime,
         };
       } catch (error) {
-        console.warn('[PoseProcessor] Cloud processing failed:', error);
+        poseWarn('[PoseProcessor] Cloud processing failed:', error);
         this.isCloudAvailable = false;
         this.lastCloudFailure = Date.now();
       }
     } else {
-      console.log('[PoseProcessor] Skipping cloud (marked unavailable, will retry after cooldown)');
+      poseLog('[PoseProcessor] Skipping cloud (marked unavailable, will retry after cooldown)');
     }
 
     // Try on-device processing
     try {
-      console.log('[PoseProcessor] Trying on-device processing...');
+      poseLog('[PoseProcessor] Trying on-device processing...');
       const result = await this.processOnDevice(imageUri, captureType);
-      console.log('[PoseProcessor] On-device processing succeeded');
+      poseLog('[PoseProcessor] On-device processing succeeded');
       return {
         ...result,
         processingTimeMs: Date.now() - startTime,
       };
     } catch (error) {
-      console.warn('[PoseProcessor] On-device processing failed:', error);
+      poseWarn('[PoseProcessor] On-device processing failed:', error);
     }
 
     // Last resort: return estimated landmarks from image dimensions
-    console.warn('[PoseProcessor] Using fallback estimation; measurements need extra review.');
+    poseWarn('[PoseProcessor] Using fallback estimation; measurements need extra review.');
     const result = await this.estimateLandmarksFromImageSize(imageUri, captureType);
     return {
       ...result,
@@ -288,7 +299,7 @@ class PoseProcessor {
     try {
       const baseUrl = this.cloudConfig.apiUrl.replace(/\/detect\/?$/, '').replace(/\/+$/, '');
       const healthUrl = `${baseUrl}/health`;
-      console.log('[PoseProcessor] Checking cloud at:', healthUrl);
+      poseLog('[PoseProcessor] Checking cloud at:', healthUrl);
       const headers: Record<string, string> = {};
       if (this.cloudConfig.apiKey) {
         headers['Authorization'] = `Bearer ${this.cloudConfig.apiKey}`;
@@ -301,11 +312,11 @@ class PoseProcessor {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      console.log('[PoseProcessor] Cloud health response:', response.status);
+      poseLog('[PoseProcessor] Cloud health response:', response.status);
       this.isCloudAvailable = response.ok;
       return response.ok;
     } catch (error) {
-      console.warn('[PoseProcessor] Cloud check failed:', error);
+      poseWarn('[PoseProcessor] Cloud check failed:', error);
       this.isCloudAvailable = false;
       return false;
     }
@@ -341,7 +352,7 @@ class PoseProcessor {
           const timeoutId = setTimeout(() => controller.abort(), this.cloudConfig.timeout);
 
           const detectUrl = `${this.cloudConfig.apiUrl}/detect`;
-          console.log(`[PoseProcessor] Cloud request attempt ${attempt + 1}/${this.cloudConfig.retries + 1} → ${detectUrl}`);
+          poseLog(`[PoseProcessor] Cloud request attempt ${attempt + 1}/${this.cloudConfig.retries + 1} → ${detectUrl}`);
 
           const response = await fetch(detectUrl, {
           method: 'POST',
@@ -444,7 +455,7 @@ class PoseProcessor {
       // If the native module is not installed, the require() will throw.
       // Log once and let caller fall through to estimation.
       if (error?.code === 'MODULE_NOT_FOUND' || error?.message?.includes('Cannot find module')) {
-        console.info('[PoseProcessor] On-device MediaPipe not installed. Install @gymbrosinc/react-native-mediapipe-pose for offline landmark detection.');
+        poseInfo('[PoseProcessor] On-device MediaPipe not installed. Install @gymbrosinc/react-native-mediapipe-pose for offline landmark detection.');
       }
       throw new Error(`On-device processing not available: ${error?.message || error}`);
     }

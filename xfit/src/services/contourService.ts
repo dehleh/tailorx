@@ -23,6 +23,7 @@ export interface ContourWidth {
   y_position: number;   // normalized 0-1
   left_edge: number;
   right_edge: number;
+  confidence?: number;
 }
 
 export interface ContourResult {
@@ -32,6 +33,7 @@ export interface ContourResult {
   silhouetteHeightPx: number;
   processingTimeMs: number;
   segmentationConfidence: number;
+  partConfidence?: Record<string, number>;
 }
 
 // ============================================================
@@ -65,6 +67,7 @@ class ContourService {
     landmarks: Landmark[] | null,
     scaleFactor: number | null,
   ): Promise<ContourResult | null> {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
       // Read image as base64
       const base64Image = await FileSystem.readAsStringAsync(imageUri, {
@@ -89,7 +92,7 @@ class ContourService {
       }
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
       const response = await fetch(`${API_BASE_URL}/v1/body/contour`, {
         method: 'POST',
@@ -104,6 +107,7 @@ class ContourService {
       });
 
       clearTimeout(timeoutId);
+      timeoutId = null;
 
       if (!response.ok) {
         console.warn(`Contour API returned ${response.status}`);
@@ -126,8 +130,10 @@ class ContourService {
         silhouetteHeightPx: data.silhouette_height_px,
         processingTimeMs: data.processing_time_ms,
         segmentationConfidence: data.segmentation_confidence,
+        partConfidence: this.buildPartConfidence(data.widths, data.segmentation_confidence),
       };
     } catch (error: any) {
+      if (timeoutId) clearTimeout(timeoutId);
       if (error?.name === 'AbortError') {
         console.warn('Contour extraction timed out');
       } else {
@@ -142,19 +148,46 @@ class ContourService {
    * Check if the contour service is reachable.
    */
   async checkAvailability(): Promise<boolean> {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      timeoutId = setTimeout(() => controller.abort(), 5000);
       const res = await fetch(`${API_BASE_URL}/health`, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      timeoutId = null;
       this.isAvailable = res.ok;
       return this.isAvailable;
     } catch {
+      if (timeoutId) clearTimeout(timeoutId);
       this.isAvailable = false;
       return false;
     }
+  }
+
+  private buildPartConfidence(
+    widths: Record<string, ContourWidth> | undefined,
+    segmentationConfidence: number
+  ): Record<string, number> {
+    const result: Record<string, number> = {};
+    const base = this.normalizeConfidence(segmentationConfidence);
+    for (const [part, width] of Object.entries(widths || {})) {
+      const explicitRaw = (width as any).confidence;
+      const explicit = typeof explicitRaw === 'number'
+        ? this.normalizeConfidence(explicitRaw)
+        : null;
+      const hasEdges = Number.isFinite(width.left_edge) && Number.isFinite(width.right_edge);
+      const hasWidth = Number.isFinite(width.width_px) && width.width_px > 0;
+      const geometryPenalty = hasEdges && hasWidth ? 1 : 0.6;
+      result[part] = Math.max(0, Math.min(1, (explicit ?? base) * geometryPenalty));
+    }
+    return result;
+  }
+
+  private normalizeConfidence(value: unknown): number {
+    if (typeof value !== 'number' || !isFinite(value) || value <= 0) return 0;
+    return value > 1 ? Math.min(1, value / 100) : Math.min(1, value);
   }
 
   get available(): boolean | null {

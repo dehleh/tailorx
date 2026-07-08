@@ -9,7 +9,7 @@
  * - Accuracy reporting
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,8 @@ import { BodyMeasurement } from '../types/measurements';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BURST_TOTAL_FRAMES = 5;
+const AUTO_CAPTURE_SAMPLE_MS = 2200;
+const AUTO_CAPTURE_STABLE_MS = 1500;
 
 // ============================================================
 // TYPES
@@ -56,14 +58,20 @@ interface CapturedAngle {
 
 export default function MultiCaptureScanScreen({ navigation, route }: any) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [currentStep, setCurrentStep] = useState<CaptureStep>('front');
+  const [currentStep, setCurrentStep] = useState<CaptureStep>(
+    (route?.params?.initialStep as CaptureStep) || 'front'
+  );
   const [captures, setCaptures] = useState<CapturedAngle[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
   const [processingProgress, setProcessingProgress] = useState(0);
   const [liveLandmarks, setLiveLandmarks] = useState<import('../services/measurementEngine').Landmark[] | null>(null);
+  const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(true);
+  const [autoCaptureStatus, setAutoCaptureStatus] = useState('Auto capture checking pose');
+  const [autoReadySince, setAutoReadySince] = useState<number | null>(null);
   const cameraRef = useRef<any>(null);
+  const autoSamplingRef = useRef(false);
 
   const addMeasurement = useMeasurementStore((state) => state.addMeasurement);
   const activeEnterpriseSessionId = useEnterpriseStore((state) => state.activeSessionId);
@@ -84,6 +92,28 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   // CAPTURE HANDLER
   // ============================================================
 
+  const capturePhotoToCache = useCallback(async (
+    options: { quality: number; base64: boolean; skipProcessing: boolean },
+    prefix: string
+  ): Promise<string | null> => {
+    if (!cameraRef.current) return null;
+
+    const photo = await cameraRef.current.takePictureAsync(options);
+    if (!photo || (!photo.uri && !photo.base64)) {
+      return null;
+    }
+
+    if (photo.base64) {
+      const cacheUri = `${FileSystem.cacheDirectory}${prefix}_${Date.now()}.jpg`;
+      await FileSystem.writeAsStringAsync(cacheUri, photo.base64, {
+        encoding: 'base64',
+      });
+      return cacheUri;
+    }
+
+    return photo.uri;
+  }, []);
+
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturing) return;
 
@@ -91,13 +121,13 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       setIsCapturing(true);
 
       // 1. Take photo (with base64 so we can write to a guaranteed-accessible path)
-      const photo = await cameraRef.current.takePictureAsync({
+      const imageUri = await capturePhotoToCache({
         quality: 1.0,
         base64: true,
         skipProcessing: false,
-      });
+      }, 'capture');
 
-      if (!photo || (!photo.uri && !photo.base64)) {
+      if (!imageUri) {
         setIsCapturing(false);
         Alert.alert(
           'Capture Failed',
@@ -105,16 +135,6 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           [{ text: 'OK' }]
         );
         return;
-      }
-
-      // Write to cache directory to guarantee expo-file-system can access the file
-      let imageUri = photo.uri;
-      if (photo.base64) {
-        const cacheUri = `${FileSystem.cacheDirectory}capture_${Date.now()}.jpg`;
-        await FileSystem.writeAsStringAsync(cacheUri, photo.base64, {
-          encoding: 'base64',
-        });
-        imageUri = cacheUri;
       }
 
       // 2. Validate image
@@ -158,20 +178,12 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       const burstUris: string[] = [imageUri];
       for (let i = 0; i < BURST_TOTAL_FRAMES - 1; i++) {
         try {
-          const burstPhoto = await cameraRef.current.takePictureAsync({
+          const burstUri = await capturePhotoToCache({
             quality: 0.9,
             base64: true,
             skipProcessing: true, // faster for burst frames
-          });
-          if (burstPhoto?.base64) {
-            const burstCacheUri = `${FileSystem.cacheDirectory}burst_${Date.now()}_${i}.jpg`;
-            await FileSystem.writeAsStringAsync(burstCacheUri, burstPhoto.base64, {
-              encoding: 'base64',
-            });
-            burstUris.push(burstCacheUri);
-          } else if (burstPhoto?.uri) {
-            burstUris.push(burstPhoto.uri);
-          }
+          }, `burst_${i}`);
+          if (burstUri) burstUris.push(burstUri);
         } catch {
           // If burst capture fails, continue with what we have
           break;
@@ -255,21 +267,21 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
               ? [] // Don't offer "Finish Now" before side view — strongly encourage it
               : [{
                   text: 'Finish Now',
-                  onPress: () => processMeasurements(updatedCaptures),
+                  onPress: () => reviewCapturesBeforeProcessing(updatedCaptures),
                 }]
             ),
           ]
         );
       } else {
-        // All captures done, process
-        await processMeasurements(updatedCaptures);
+        // All captures done, show a final review before processing
+        await reviewCapturesBeforeProcessing(updatedCaptures);
       }
     } catch (error) {
       setIsCapturing(false);
       console.error('Capture error:', error);
       Alert.alert('Error', 'Failed to capture. Please try again.');
     }
-  }, [currentStep, captures, isCapturing, currentStepIndex]);
+  }, [currentStep, captures, isCapturing, currentStepIndex, capturePhotoToCache]);
 
   // ============================================================
   // MEASUREMENT PROCESSING
@@ -351,6 +363,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
                   widths: result.widths,
                   silhouetteHeightPx: result.silhouetteHeightPx,
                   segmentationConfidence: result.segmentationConfidence,
+                  partConfidence: result.partConfidence,
                 };
               }
             })
@@ -372,6 +385,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
                   widths: result.widths,
                   silhouetteHeightPx: result.silhouetteHeightPx,
                   segmentationConfidence: result.segmentationConfidence,
+                  partConfidence: result.partConfidence,
                 };
               }
             })
@@ -463,6 +477,8 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           circumferenceSource: result.metadata.circumferenceSource,
           missingRequiredAngles: result.metadata.missingRequiredAngles,
           calibrationConfidence: result.metadata.calibrationConfidence,
+          contourConfidenceByPart: result.metadata.contourConfidenceByPart,
+          anchorMeasurement: result.metadata.anchorMeasurement,
           engineVersion: result.metadata.engineVersion,
           processingTimeMs: result.metadata.processingTimeMs,
           warnings: result.warnings,
@@ -513,6 +529,65 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
     }
   };
 
+  function reviewCapturesBeforeProcessing(allCaptures: CapturedAngle[]): Promise<void> {
+    const lowestConfidence = [...allCaptures].sort(
+      (a, b) => a.poseResult.confidence - b.poseResult.confidence
+    )[0];
+    const lowConfidenceCaptures = allCaptures.filter(c => c.poseResult.confidence < 0.65);
+    const missingSide = !allCaptures.some(c => c.type === 'side');
+    const summary = allCaptures
+      .map(c => `${capitalize(c.type)}: ${Math.round(c.poseResult.confidence * 100)}%`)
+      .join('\n');
+    const reviewNotes = [
+      missingSide ? 'Side view is required before measuring circumferences.' : null,
+      lowConfidenceCaptures.length > 0
+        ? `Retake recommended: ${lowConfidenceCaptures.map(c => capitalize(c.type)).join(', ')}.`
+        : 'All required capture angles passed the current gates.',
+      anchorMeasurement
+        ? `Anchor active: ${anchorMeasurement.key} ${anchorMeasurement.valueCm}cm.`
+        : null,
+    ].filter(Boolean).join('\n');
+
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Review Captures',
+        `${summary}\n\n${reviewNotes}`,
+        [
+          ...(missingSide
+            ? [{
+                text: 'Capture Side',
+                style: 'cancel' as const,
+                onPress: () => {
+                  setCurrentStep('side');
+                  resolve();
+                },
+              }]
+            : []),
+          ...(lowestConfidence && lowConfidenceCaptures.length > 0
+            ? [{
+                text: `Retake ${capitalize(lowestConfidence.type)}`,
+                style: 'cancel' as const,
+                onPress: () => {
+                  setCaptures(allCaptures.filter(c => c.type !== lowestConfidence.type));
+                  setCurrentStep(lowestConfidence.type);
+                  setLiveLandmarks(null);
+                  setIsCapturing(false);
+                  resolve();
+                },
+              }]
+            : []),
+          {
+            text: 'Process Scan',
+            onPress: () => {
+              processMeasurements(allCaptures);
+              resolve();
+            },
+          },
+        ]
+      );
+    });
+  }
+
   // ============================================================
   // HELPERS
   // ============================================================
@@ -545,6 +620,113 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
     processMeasurements(captures);
   };
+
+  const samplePoseForAutoCapture = useCallback(async () => {
+    const isCaptureStep = currentStep === 'front' || currentStep === 'side' || currentStep === 'back';
+    if (!autoCaptureEnabled || !isCaptureStep || isCapturing || isProcessing || !cameraRef.current || autoSamplingRef.current) {
+      return;
+    }
+
+    autoSamplingRef.current = true;
+    let previewUri: string | null = null;
+
+    try {
+      setAutoCaptureStatus('Checking pose');
+      previewUri = await capturePhotoToCache({
+        quality: 0.35,
+        base64: true,
+        skipProcessing: true,
+      }, 'auto_preview');
+
+      if (!previewUri) {
+        setAutoCaptureStatus('Camera warming up');
+        setAutoReadySince(null);
+        return;
+      }
+
+      const poseResult = await poseProcessor.processImage(
+        previewUri,
+        currentStep as 'front' | 'side' | 'back'
+      );
+
+      if (poseResult.confidence < 0.3) {
+        setLiveLandmarks(null);
+        setAutoReadySince(null);
+        setAutoCaptureStatus('Find full body');
+        return;
+      }
+
+      setLiveLandmarks(poseResult.landmarks);
+      const feedback = analyzePose(
+        poseResult.landmarks,
+        poseResult.imageWidth,
+        poseResult.imageHeight,
+        currentStep as 'front' | 'side' | 'back'
+      );
+
+      if (!feedback.overallReady) {
+        setAutoReadySince(null);
+        setAutoCaptureStatus(feedback.issues[0] || 'Adjust pose');
+        return;
+      }
+
+      const now = Date.now();
+      const readySince = autoReadySince ?? now;
+      if (!autoReadySince) {
+        setAutoReadySince(now);
+      }
+
+      const remainingMs = AUTO_CAPTURE_STABLE_MS - (now - readySince);
+      if (remainingMs <= 0) {
+        setAutoReadySince(null);
+        setAutoCaptureStatus('Capturing');
+        await handleCapture();
+      } else {
+        setAutoCaptureStatus(`Hold still ${Math.ceil(remainingMs / 1000)}s`);
+      }
+    } catch {
+      setAutoReadySince(null);
+      setAutoCaptureStatus('Tap to capture');
+    } finally {
+      autoSamplingRef.current = false;
+      if (previewUri?.includes('auto_preview')) {
+        try {
+          await FileSystem.deleteAsync(previewUri, { idempotent: true });
+        } catch {
+          // Preview sample cleanup is best-effort.
+        }
+      }
+    }
+  }, [
+    autoCaptureEnabled,
+    autoReadySince,
+    capturePhotoToCache,
+    currentStep,
+    handleCapture,
+    isCapturing,
+    isProcessing,
+  ]);
+
+  useEffect(() => {
+    const isCaptureStep = currentStep === 'front' || currentStep === 'side' || currentStep === 'back';
+    if (!permission?.granted || !autoCaptureEnabled || !isCaptureStep || isCapturing || isProcessing) {
+      setAutoReadySince(null);
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      samplePoseForAutoCapture();
+    }, AUTO_CAPTURE_SAMPLE_MS);
+
+    return () => clearInterval(intervalId);
+  }, [
+    autoCaptureEnabled,
+    currentStep,
+    isCapturing,
+    isProcessing,
+    permission?.granted,
+    samplePoseForAutoCapture,
+  ]);
 
   // ============================================================
   // PERMISSION HANDLING
@@ -660,6 +842,26 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           {/* Spacer to balance close button */}
           <View style={{ width: 40 }} />
       </View>
+
+      <TouchableOpacity
+        style={[
+          styles.autoCapturePill,
+          !autoCaptureEnabled && styles.autoCapturePillOff,
+        ]}
+        onPress={() => {
+          setAutoCaptureEnabled(v => !v);
+          setAutoReadySince(null);
+          setAutoCaptureStatus(autoCaptureEnabled ? 'Tap to capture' : 'Checking pose');
+        }}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.autoCaptureLabel}>
+          {autoCaptureEnabled ? 'Auto on' : 'Auto off'}
+        </Text>
+        <Text style={styles.autoCaptureStatus} numberOfLines={1}>
+          {autoCaptureEnabled ? autoCaptureStatus : 'Manual'}
+        </Text>
+      </TouchableOpacity>
 
       {/* Bottom controls */}
       <View style={[styles.bottomBar, { position: 'absolute', bottom: 0, left: 0, right: 0 }]}>
@@ -835,6 +1037,39 @@ const styles = StyleSheet.create({
   },
   stepConnectorDone: {
     backgroundColor: Theme.colors.success,
+  },
+
+  // ---- Auto capture ----
+  autoCapturePill: {
+    position: 'absolute',
+    top: 112,
+    alignSelf: 'center',
+    zIndex: 10,
+    minWidth: 150,
+    maxWidth: SCREEN_WIDTH - 32,
+    backgroundColor: 'rgba(0, 0, 0, 0.62)',
+    borderRadius: 18,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: Theme.colors.primary,
+    alignItems: 'center',
+  },
+  autoCapturePillOff: {
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    opacity: 0.82,
+  },
+  autoCaptureLabel: {
+    color: Theme.colors.white,
+    fontSize: 12,
+    fontWeight: Theme.fontWeight.bold,
+  },
+  autoCaptureStatus: {
+    color: Theme.colors.white,
+    fontSize: 11,
+    opacity: 0.82,
+    marginTop: 1,
+    maxWidth: SCREEN_WIDTH - 64,
   },
 
   // ---- Bottom bar ----

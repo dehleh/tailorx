@@ -33,10 +33,21 @@ const DEMO_DATA = [
   },
 ];
 
+const CSV_TEMPLATE = `subjectId,scanId,bodyPart,groundTruthCm,scanCm,status,condition,notes
+p001,scan001,chest,,,completed,front_side_calibrated,
+p001,scan001,waist,,,completed,front_side_calibrated,
+p001,scan001,hips,,,completed,front_side_calibrated,
+p001,scan001,shoulders,,,completed,front_side_calibrated,
+p001,scan001,sleeve,,,completed,front_side_calibrated,
+p001,scan001,inseam,,,completed,front_side_calibrated,
+p001,scan001,thigh,,,completed,front_side_calibrated,
+p001,scan001,neck,,,completed,front_side_calibrated,`;
+
 function usage() {
   console.log(`Usage:
   node scripts/accuracy-benchmark.mjs <study.json|study.csv> [--json]
   node scripts/accuracy-benchmark.mjs --demo [--json]
+  node scripts/accuracy-benchmark.mjs --template > study-template.csv
 
 JSON records:
   [{
@@ -57,6 +68,7 @@ function parseArgs(argv) {
   return {
     demo: args.includes('--demo'),
     json: args.includes('--json'),
+    template: args.includes('--template'),
     input: args.find(arg => !arg.startsWith('--')),
   };
 }
@@ -234,6 +246,11 @@ function printMarkdown(result) {
 }
 
 const args = parseArgs(process.argv);
+if (args.template) {
+  console.log(CSV_TEMPLATE);
+  process.exit(0);
+}
+
 const records = loadInput(args);
 const rows = normalizeRows(records);
 

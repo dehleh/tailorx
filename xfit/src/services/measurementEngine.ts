@@ -12,6 +12,15 @@
 
 import { MeasurementPoint, ScanResult } from '../types/measurements';
 
+const SHOULD_LOG_MEASUREMENT_ENGINE =
+  typeof __DEV__ !== 'undefined' && __DEV__ && process.env.NODE_ENV !== 'test';
+const engineLog = (...args: Parameters<typeof console.log>) => {
+  if (SHOULD_LOG_MEASUREMENT_ENGINE) console.log(...args);
+};
+const engineWarn = (...args: Parameters<typeof console.warn>) => {
+  if (SHOULD_LOG_MEASUREMENT_ENGINE) console.warn(...args);
+};
+
 // ============================================================
 // TYPES
 // ============================================================
@@ -60,8 +69,10 @@ export interface MeasurementResult {
     circumferenceSource?: string;
     missingRequiredAngles?: string[];
     calibrationConfidence?: number;
+    contourConfidenceByPart?: Record<string, number>;
     rotationCorrected?: boolean;
     anchorApplied?: boolean;
+    anchorMeasurement?: { key: string; valueCm: number };
     crossValidated?: boolean;
   };
 }
@@ -79,6 +90,7 @@ export interface ContourWidths {
   widths: Record<string, { width_px: number; width_cm: number | null }>;
   silhouetteHeightPx: number;
   segmentationConfidence: number;
+  partConfidence?: Record<string, number>;
 }
 
 // ============================================================
@@ -367,8 +379,8 @@ class MeasurementEngine {
       correctedCapturesForScale, calibration, knownHeight, warnings
     );
 
-    if (__DEV__) {
-      console.log('[MeasEngine] scaleFactor:', scaleFactor, 'captures:', captures.length,
+    if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+      engineLog('[MeasEngine] scaleFactor:', scaleFactor, 'captures:', captures.length,
         'types:', captures.map(c => c.type),
         'landmarks/capture:', captures.map(c => c.landmarks.length));
     }
@@ -378,8 +390,8 @@ class MeasurementEngine {
       rotationCorrectedFront, scaleFactor, knownHeight
     );
 
-    if (__DEV__) {
-      console.log('[MeasEngine] frontMeasurements:', JSON.stringify({
+    if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+      engineLog('[MeasEngine] frontMeasurements:', JSON.stringify({
         height: frontMeasurements.height,
         shoulderWidth: frontMeasurements.shoulderWidth,
         sleeveLength: frontMeasurements.sleeveLength,
@@ -393,9 +405,10 @@ class MeasurementEngine {
       ? this.calculateSideViewMeasurements(rotationCorrectedSide, scaleFactor)
       : null;
     const missingRequiredAngles = sideMeasurements ? [] : ['side'];
+    const contourConfidenceByPart = this.getContourConfidenceByPart(contourData);
 
-    if (__DEV__ && sideMeasurements) {
-      console.log('[MeasEngine] sideMeasurements:', JSON.stringify(sideMeasurements));
+    if (SHOULD_LOG_MEASUREMENT_ENGINE && sideMeasurements) {
+      engineLog('[MeasEngine] sideMeasurements:', JSON.stringify(sideMeasurements));
     }
 
     // Step 5: Calculate circumferences by combining front + side
@@ -434,13 +447,13 @@ class MeasurementEngine {
       rawMeasurements.topLength = frontMeasurements.topLength;
     }
 
-    if (__DEV__) {
-      console.log('[MeasEngine] rawMeasurements:', JSON.stringify(rawMeasurements));
+    if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+      engineLog('[MeasEngine] rawMeasurements:', JSON.stringify(rawMeasurements));
       const nanKeys = Object.entries(rawMeasurements)
         .filter(([, v]) => !isFinite(v) || v <= 0)
         .map(([k]) => k);
       if (nanKeys.length > 0) {
-        console.warn('[MeasEngine] Invalid values detected for:', nanKeys.join(', '));
+        engineWarn('[MeasEngine] Invalid values detected for:', nanKeys.join(', '));
       }
     }
 
@@ -454,7 +467,7 @@ class MeasurementEngine {
       ? sanitizedRaw.height
       : (knownHeight && knownHeight > 0 ? knownHeight : 170);
     if (zeroCount >= 5) {
-      if (__DEV__) console.warn('[MeasEngine] Too many zero values, applying anthropometric fallback');
+      if (SHOULD_LOG_MEASUREMENT_ENGINE) engineWarn('[MeasEngine] Too many zero values, applying anthropometric fallback');
       warnings.push(sideMeasurements
         ? 'Measurements could not be fully calculated from poses. Using body-proportion fallback for missing values.'
         : 'Circumference measurements withheld until side view is captured; using fallback only for missing linear values.'
@@ -526,7 +539,8 @@ class MeasurementEngine {
       gender,
       !!sideCapture,
       !!calibration || !!knownHeight,
-      contourData
+      contourData,
+      contourConfidenceByPart
     );
 
     // Step 9: Calculate overall accuracy
@@ -557,8 +571,10 @@ class MeasurementEngine {
         circumferenceSource,
         missingRequiredAngles,
         calibrationConfidence: (calibration as any)?.confidence ?? (calibration as any)?.reference?.confidence,
+        contourConfidenceByPart,
         rotationCorrected: rotationApplied,
         anchorApplied,
+        anchorMeasurement: anchorApplied && anchorMeasurement ? anchorMeasurement : undefined,
         crossValidated: true,
       },
     };
@@ -610,7 +626,7 @@ class MeasurementEngine {
       
       const explicitCmPerPixel = (calibration as any).cmPerPixel || ref.cmPerPixel;
       if (isFinite(explicitCmPerPixel) && explicitCmPerPixel > 0) {
-        if (__DEV__) console.log('[MeasEngine] scaleFactor from cmPerPixel:', explicitCmPerPixel, 'type:', calType);
+        if (SHOULD_LOG_MEASUREMENT_ENGINE) engineLog('[MeasEngine] scaleFactor from cmPerPixel:', explicitCmPerPixel, 'type:', calType);
         return explicitCmPerPixel;
       }
 
@@ -619,13 +635,13 @@ class MeasurementEngine {
         const rw = ref.realWidthCm || (calibration as any).realWidthCm || 0;
         const pixelsPerCm = pw / rw;
         const sf = 1 / pixelsPerCm; // cm per pixel
-        if (__DEV__) console.log('[MeasEngine] scaleFactor from calibration:', sf, 'type:', calType);
+        if (SHOULD_LOG_MEASUREMENT_ENGINE) engineLog('[MeasEngine] scaleFactor from calibration:', sf, 'type:', calType);
         if (isFinite(sf) && sf > 0) {
           return sf;
         }
       }
       // Height-only or invalid calibration — fall through to known height
-      if (__DEV__) console.log('[MeasEngine] calibration type:', calType, '— using knownHeight instead');
+      if (SHOULD_LOG_MEASUREMENT_ENGINE) engineLog('[MeasEngine] calibration type:', calType, '— using knownHeight instead');
     }
 
     // Priority 2: Known height calibration
@@ -636,14 +652,14 @@ class MeasurementEngine {
         const feetBottom = this.getBottomOfFeet(frontCapture.landmarks);
         const heightPixels = Math.abs(feetBottom.y - headTop.y) * frontCapture.imageHeight;
 
-        if (__DEV__) {
-          console.log('[MeasEngine] headTop.y:', headTop.y, 'feetBottom.y:', feetBottom.y,
+        if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+          engineLog('[MeasEngine] headTop.y:', headTop.y, 'feetBottom.y:', feetBottom.y,
             'imgH:', frontCapture.imageHeight, 'heightPx:', heightPixels, 'knownH:', knownHeight);
         }
 
         if (heightPixels > 10) { // require at least 10px person height
           const sf = knownHeight / heightPixels;
-          if (__DEV__) console.log('[MeasEngine] scaleFactor from knownHeight:', sf);
+          if (SHOULD_LOG_MEASUREMENT_ENGINE) engineLog('[MeasEngine] scaleFactor from knownHeight:', sf);
           return sf;
         }
       }
@@ -657,8 +673,8 @@ class MeasurementEngine {
       const headTop = this.getTopOfHead(frontCapture.landmarks);
       const feetBottom = this.getBottomOfFeet(frontCapture.landmarks);
       const heightPixels = Math.abs(feetBottom.y - headTop.y) * frontCapture.imageHeight;
-      if (__DEV__) {
-        console.log('[MeasEngine] scaleFactor fallback: headTop.y:', headTop.y,
+      if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+        engineLog('[MeasEngine] scaleFactor fallback: headTop.y:', headTop.y,
           'feetBottom.y:', feetBottom.y, 'heightPx:', heightPixels);
       }
       if (heightPixels > 10) {
@@ -666,7 +682,7 @@ class MeasurementEngine {
       }
     }
 
-    if (__DEV__) console.warn('[MeasEngine] scaleFactor: using emergency fallback=1');
+    if (SHOULD_LOG_MEASUREMENT_ENGINE) engineWarn('[MeasEngine] scaleFactor: using emergency fallback=1');
     return 1; // fallback (practically useless)
   }
 
@@ -683,15 +699,15 @@ class MeasurementEngine {
     const imgH = capture.imageHeight;
     const imgW = capture.imageWidth;
 
-    if (__DEV__) {
-      console.log('[MeasEngine] frontView: imgW:', imgW, 'imgH:', imgH,
+    if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+      engineLog('[MeasEngine] frontView: imgW:', imgW, 'imgH:', imgH,
         'landmarkCount:', lm.length, 'scaleFactor:', scaleFactor, 'knownHeight:', knownHeight);
       // Log a few key landmarks for diagnosis
       const nose = lm.find(l => l.name === 'nose');
       const lSh = lm.find(l => l.name === 'left_shoulder');
       const lAnk = lm.find(l => l.name === 'left_ankle');
       const lHeel = lm.find(l => l.name === 'left_heel');
-      console.log('[MeasEngine] keyLandmarks: nose=', nose?.y?.toFixed(4),
+      engineLog('[MeasEngine] keyLandmarks: nose=', nose?.y?.toFixed(4),
         'lShoulder=', lSh?.y?.toFixed(4),
         'lAnkle=', lAnk?.y?.toFixed(4),
         'lHeel=', lHeel?.y?.toFixed(4));
@@ -746,8 +762,8 @@ class MeasurementEngine {
     const measuredHeight = this.round(heightPixels * scaleFactor);
     const height = (knownHeight && knownHeight > 0) ? knownHeight : measuredHeight;
 
-    if (__DEV__) {
-      console.log('[MeasEngine] headTopY:', headTopY.toFixed(4),
+    if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+      engineLog('[MeasEngine] headTopY:', headTopY.toFixed(4),
         'feetBottomY:', feetBottomY.toFixed(4), 'heightPx:', heightPixels.toFixed(1),
         'measuredH:', measuredHeight, 'finalH:', height);
     }
@@ -961,12 +977,12 @@ class MeasurementEngine {
     const fc = contourData?.front;
     const sc = contourData?.side;
 
-    if (__DEV__) {
-      console.log('[MeasEngine] circumferences: fc?', !!fc,
+    if (SHOULD_LOG_MEASUREMENT_ENGINE) {
+      engineLog('[MeasEngine] circumferences: fc?', !!fc,
         'fc.segConf:', fc?.segmentationConfidence,
         'sc?', !!sc, 'sc.segConf:', sc?.segmentationConfidence,
         'sideMeasurements?', !!sideMeasurements);
-      console.log('[MeasEngine] frontWidths:', JSON.stringify(frontWidths));
+      engineLog('[MeasEngine] frontWidths:', JSON.stringify(frontWidths));
     }
 
     if (fc && fc.segmentationConfidence > 0.4) {
@@ -1055,6 +1071,37 @@ class MeasurementEngine {
     return 'front_landmark_side_landmark_ellipse';
   }
 
+  private getContourConfidenceByPart(contourData?: ContourData): Record<string, number> | undefined {
+    if (!contourData?.front && !contourData?.side) return undefined;
+
+    const result: Record<string, number> = {};
+    const parts = new Set<string>([
+      ...Object.keys(contourData.front?.widths || {}),
+      ...Object.keys(contourData.side?.widths || {}),
+    ]);
+
+    for (const part of parts) {
+      const values: number[] = [];
+      for (const contour of [contourData.front, contourData.side]) {
+        if (!contour?.widths?.[part]) continue;
+        const explicit = contour.partConfidence?.[part];
+        const confidence = typeof explicit === 'number'
+          ? explicit
+          : contour.segmentationConfidence;
+        if (isFinite(confidence) && confidence > 0) {
+          values.push(confidence > 1 ? confidence / 100 : confidence);
+        }
+      }
+
+      if (values.length > 0) {
+        const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+        result[part] = Math.max(0, Math.min(100, Math.round(avg * 100)));
+      }
+    }
+
+    return Object.keys(result).length > 0 ? result : undefined;
+  }
+
   /**
    * Convert contour widths from segmentation result to cm values.
    * Always uses width_px × engine scale factor (which is correctly derived
@@ -1077,8 +1124,8 @@ class MeasurementEngine {
         const widthCm = data.width_px * scaleFactor;
         const cap = MAX_WIDTH_CM[part] ?? 100;
         result[part] = Math.min(widthCm, cap);
-        if (__DEV__ && widthCm > cap) {
-          console.warn('[MeasEngine] contour width capped for', part,
+        if (SHOULD_LOG_MEASUREMENT_ENGINE && widthCm > cap) {
+          engineWarn('[MeasEngine] contour width capped for', part,
             ':', widthCm.toFixed(1), '→', cap, 'cm (width_px:', data.width_px, 'sf:', scaleFactor.toFixed(5), ')');
         }
       }
@@ -1204,7 +1251,8 @@ class MeasurementEngine {
     gender: 'male' | 'female' | 'other',
     hasSideView: boolean,
     hasCalibration: boolean,
-    contourData?: ContourData
+    contourData?: ContourData,
+    contourConfidenceByPart?: Record<string, number>
   ): Record<string, number> {
     const confidence: Record<string, number> = {};
 
@@ -1267,6 +1315,18 @@ class MeasurementEngine {
         // Contour evidence: real silhouette widths are far more reliable
         if (hasContour && contourConfidence > 0.4) {
           logOdds += Math.log(2.5); // strong evidence
+        }
+
+        const contourPartKey = config.key === 'underbust' ? 'chest' : config.key;
+        const partConfidence = contourConfidenceByPart?.[contourPartKey];
+        if (partConfidence !== undefined) {
+          if (partConfidence >= 75) {
+            logOdds += Math.log(1.6);
+          } else if (partConfidence >= 50) {
+            logOdds += Math.log(1.15);
+          } else {
+            logOdds += Math.log(0.7);
+          }
         }
       }
 

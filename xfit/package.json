@@ -16,6 +16,7 @@
     "typecheck:admin": "npm --prefix admin-dashboard run type-check",
     "test:server": "python -m pytest server",
     "benchmark:accuracy": "node scripts/accuracy-benchmark.mjs",
+    "benchmark:accuracy:template": "node scripts/accuracy-benchmark.mjs --template",
     "verify": "npm run typecheck:mobile && npm run typecheck:landing && npm run typecheck:admin && npm test -- --runInBand && npm run test:server",
     "lint": "eslint src/ --ext .ts,.tsx",
     "build:preview": "eas build --platform android --profile preview",
