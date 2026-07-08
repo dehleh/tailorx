@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile } from '../types/user';
+import { storageService } from '../services/storageService';
 
 interface UserStore {
   user: UserProfile | null;
@@ -25,7 +25,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   setUser: async (user: UserProfile) => {
     try {
       set({ isLoading: true, error: null });
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+      await storageService.saveSensitive(STORAGE_KEY, user);
       set({ user, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to save user data', isLoading: false });
@@ -40,7 +40,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         throw new Error('No user to update');
       }
       const updatedUser = { ...currentUser, ...userData };
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUser));
+      await storageService.saveSensitive(STORAGE_KEY, updatedUser);
       set({ user: updatedUser, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to update user data', isLoading: false });
@@ -50,8 +50,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   loadUser: async () => {
     try {
       set({ isLoading: true, error: null });
-      const data = await AsyncStorage.getItem(STORAGE_KEY);
-      const user = data ? JSON.parse(data) : null;
+      const user = await storageService.loadSensitive<UserProfile>(STORAGE_KEY);
       set({ user, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to load user data', isLoading: false });
@@ -61,7 +60,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   clearUser: async () => {
     try {
       set({ isLoading: true, error: null });
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      await storageService.removeSensitive(STORAGE_KEY);
       set({ user: null, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to clear user data', isLoading: false });

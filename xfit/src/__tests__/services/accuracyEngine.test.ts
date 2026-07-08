@@ -214,7 +214,7 @@ describe('AccuracyEngine', () => {
   });
 
   describe('getExpectedAccuracy', () => {
-    it('should return better accuracy with calibration', () => {
+    it('should return better confidence with calibration', () => {
       const withoutCal = accuracyEngine.getExpectedAccuracy({
         hasCalibration: false,
         hasSideView: false,

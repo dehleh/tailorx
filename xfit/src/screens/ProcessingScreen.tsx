@@ -3,9 +3,9 @@ import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
 import { Colors } from '../constants/colors';
 
 const funFacts = [
-  'Did you know? We use AI to detect over 30 body landmarks for the most accurate measurements possible!',
-  'Our scanning technology uses advanced pose estimation for precise results.',
-  'Multi-angle scanning improves accuracy by up to 40% compared to single-angle.',
+  'Did you know? We use AI to detect over 30 body landmarks and estimate scan confidence.',
+  'Our scanning technology uses pose estimation and contour checks to produce measurement estimates.',
+  'Multi-angle scanning gives the engine more evidence than a single front view.',
 ];
 
 export default function ProcessingScreen({ route, navigation }: any) {

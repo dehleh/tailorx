@@ -22,6 +22,9 @@ export interface PoseFeedbackState {
   isGoodPosture: boolean;
   isArmsCorrect: boolean;
   isCentered: boolean;
+  isHeadInFrame: boolean;
+  isFeetInFrame: boolean;
+  isAngleCorrect: boolean;
   overallReady: boolean;
   issues: string[];
 }
@@ -59,9 +62,18 @@ export function analyzePose(
   const keyLandmarks = [nose, leftAnkle, rightAnkle, leftShoulder, rightShoulder, leftHip, rightHip];
   const visibleKeyLandmarks = keyLandmarks.filter(l => l && l.visibility > 0.4);
   const isFullBodyVisible = visibleKeyLandmarks.length >= 6;
+  const isHeadInFrame = !!nose && nose.visibility > 0.4 && nose.y > 0.03 && nose.y < 0.22;
+  const footYValues = [leftAnkle, rightAnkle].filter((l): l is Landmark => !!l && l.visibility > 0.4).map(l => l.y);
+  const isFeetInFrame = footYValues.length >= 1 && Math.max(...footYValues) > 0.72 && Math.max(...footYValues) < 0.98;
 
   if (!isFullBodyVisible) {
     issues.push('Ensure full body is visible head to toe');
+  }
+  if (!isHeadInFrame) {
+    issues.push('Keep your head fully inside the frame');
+  }
+  if (!isFeetInFrame) {
+    issues.push('Keep your feet fully inside the frame');
   }
 
   // --- Distance Check ---
@@ -85,9 +97,24 @@ export function analyzePose(
   let isCentered = true;
   if (leftHip && rightHip) {
     const centerX = (leftHip.x + rightHip.x) / 2;
-    if (centerX < 0.3 || centerX > 0.7) {
+    if (centerX < 0.35 || centerX > 0.65) {
       isCentered = false;
       issues.push('Move to the center of the frame');
+    }
+  }
+
+  // --- Angle Check ---
+  let isAngleCorrect = true;
+  if (leftShoulder && rightShoulder && leftHip && rightHip) {
+    const shoulderSpan = Math.abs(leftShoulder.x - rightShoulder.x);
+    const hipSpan = Math.abs(leftHip.x - rightHip.x);
+    if ((captureType === 'front' || captureType === 'back') && (shoulderSpan < 0.12 || hipSpan < 0.08)) {
+      isAngleCorrect = false;
+      issues.push(captureType === 'front' ? 'Face the camera directly' : 'Turn your back directly to the camera');
+    }
+    if (captureType === 'side' && (shoulderSpan > 0.18 || hipSpan > 0.14)) {
+      isAngleCorrect = false;
+      issues.push('Turn fully sideways for the side view');
     }
   }
 
@@ -115,7 +142,7 @@ export function analyzePose(
     }
   }
 
-  const overallReady = isFullBodyVisible && isGoodDistance && isGoodPosture && isArmsCorrect && isCentered;
+  const overallReady = isFullBodyVisible && isHeadInFrame && isFeetInFrame && isGoodDistance && isGoodPosture && isArmsCorrect && isCentered && isAngleCorrect;
 
   return {
     isFullBodyVisible,
@@ -123,6 +150,9 @@ export function analyzePose(
     isGoodPosture,
     isArmsCorrect,
     isCentered,
+    isHeadInFrame,
+    isFeetInFrame,
+    isAngleCorrect,
     overallReady,
     issues,
   };
@@ -171,8 +201,11 @@ export function LivePoseFeedback({ landmarks, imageWidth, imageHeight, captureTy
       {/* Checklist */}
       <View style={styles.checkList}>
         <CheckItem label="Full body visible" ok={feedback.isFullBodyVisible} />
+        <CheckItem label="Head in frame" ok={feedback.isHeadInFrame} />
+        <CheckItem label="Feet in frame" ok={feedback.isFeetInFrame} />
         <CheckItem label="Good distance" ok={feedback.isGoodDistance} />
         <CheckItem label="Centered" ok={feedback.isCentered} />
+        <CheckItem label="Correct angle" ok={feedback.isAngleCorrect} />
         <CheckItem label="Good posture" ok={feedback.isGoodPosture} />
         <CheckItem label="Arms position" ok={feedback.isArmsCorrect} />
       </View>

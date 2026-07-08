@@ -102,13 +102,13 @@ class AccuracyEngine {
     // Generate recommendations
     if (!result.metadata.anglesUsed.includes('side')) {
       recommendations.push(
-        'Add a side-view photo to improve circumference accuracy by 40-60%'
+        'Capture a side-view photo before trusting chest, waist, hips, thigh, or calf measurements.'
       );
     }
 
     if (result.metadata.calibrationMethod === 'estimated') {
       recommendations.push(
-        'Use a reference object (credit card) or enter your height for 2-3x better accuracy'
+        'Use a reference object (credit card) or enter your height for better confidence'
       );
     }
 
@@ -155,7 +155,7 @@ class AccuracyEngine {
   }
 
   /**
-   * Ensemble averaging: Combine multiple scan results for better accuracy
+   * Ensemble averaging: Combine multiple scan results for better confidence
    * Uses IQR-based outlier detection and weighted averaging
    */
   ensembleAverage(
@@ -288,8 +288,8 @@ class AccuracyEngine {
     circumferences: string;
     overallRating: string;
   } {
-    let linearError = 5; // base ±5cm
-    let circumError = 8; // base ±8cm
+    let linearError = 5; // base validation placeholder
+    let circumError = 8; // base validation placeholder
 
     if (conditions.hasCalibration) {
       linearError -= 2;

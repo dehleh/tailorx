@@ -112,8 +112,8 @@ Returns `{ status: "ok", model_loaded: true, version: "1.0.0" }`
 
 The app tries processors in this order:
 
-| Priority | Processor | Accuracy | Requirement |
+| Priority | Processor | Confidence | Requirement |
 |---|---|---|---|
-| 1 | Cloud MediaPipe server | **±1-2cm** | This server running + API key set |
-| 2 | On-device MediaPipe | **±2-3cm** | `@gymbrosinc/react-native-mediapipe-pose` (installed) |
-| 3 | Anthropometric fallback | **±4-5cm** | None (always available) |
+| 1 | Cloud MediaPipe server | Highest confidence; validate MAE before claiming accuracy | This server running + API key set |
+| 2 | On-device MediaPipe | High confidence; validate MAE before claiming accuracy | `@gymbrosinc/react-native-mediapipe-pose` (installed) |
+| 3 | Anthropometric fallback | Estimate only | None (always available) |

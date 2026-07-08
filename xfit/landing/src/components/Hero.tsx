@@ -8,12 +8,12 @@ export default function Hero() {
             Now onboarding pilot brands
           </span>
           <h1 className="font-display text-4xl font-bold leading-tight text-ink text-balance md:text-6xl">
-            Body measurements that <span className="text-accent">actually fit</span>, in seconds.
+            Guided body measurements for <span className="text-accent">better fit decisions</span>.
           </h1>
           <p className="mt-6 max-w-xl text-lg text-slate1 text-balance">
-            Tailor-X turns any phone camera into a precision measurement studio.
-            Brands cut returns, tailors scale beyond their atelier, and customers
-            never wonder about size again.
+            Tailor-X helps fashion teams and tailors capture phone-based
+            measurement estimates, review scan confidence, and run controlled
+            pilots before scaling fit workflows.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
@@ -31,16 +31,16 @@ export default function Hero() {
           </div>
           <dl className="mt-10 grid grid-cols-3 gap-6 border-t border-mist pt-6 text-sm">
             <div>
-              <dt className="text-slate2">Accuracy</dt>
-              <dd className="text-2xl font-semibold text-ink">±1.2 cm</dd>
+              <dt className="text-slate2">Validation</dt>
+              <dd className="text-2xl font-semibold text-ink">pilot data</dd>
             </div>
             <div>
               <dt className="text-slate2">Capture time</dt>
               <dd className="text-2xl font-semibold text-ink">≈ 30s</dd>
             </div>
             <div>
-              <dt className="text-slate2">Returns saved</dt>
-              <dd className="text-2xl font-semibold text-ink">up to 38%</dd>
+              <dt className="text-slate2">Fit impact</dt>
+              <dd className="text-2xl font-semibold text-ink">measured in pilot</dd>
             </div>
           </dl>
         </div>

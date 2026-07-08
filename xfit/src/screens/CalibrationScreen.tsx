@@ -5,9 +5,8 @@
  * 1. Known height (simplest, most common)
  * 2. Reference object (credit card, A4 paper, ruler)
  * 
- * Calibration is the single biggest accuracy improvement:
- * - Without: ±3-6cm error
- * - With:    ±1-2cm error
+ * Calibration improves scan confidence by converting pixels into real-world scale.
+ * Actual measurement error depends on pose, lighting, clothing, and camera setup.
  */
 
 import React, { useState } from 'react';
@@ -78,7 +77,7 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
     Alert.alert(
       'Calibration Set \u2705',
       `Your height (${heightCm}cm) will be used as the calibration reference.\n\n` +
-      'Expected accuracy: \u00b11-2cm for linear measurements.',
+      'This improves scan confidence, but it is not a tape-measure accuracy guarantee.',
       [{ text: 'Continue to Scan', onPress: () => {
         if (onComplete) {
           const calibration = referenceCalibrationService.createHeightCalibration(heightCm, 0);
@@ -115,7 +114,7 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
     Alert.alert(
       'Anchor Set ✅',
       `Your known ${anchorKey} measurement (${valueCm}cm) will be used to calibrate all other measurements.\n\n` +
-      'This improves accuracy by anchoring calculations to a verified measurement.',
+      'This improves scan confidence by anchoring calculations to a verified measurement.',
       [{
         text: 'Continue to Scan',
         onPress: () => {
@@ -154,7 +153,7 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
     // Calibration is required — prompt user to pick a method
     Alert.alert(
       'Calibration Required',
-      'Entering your height takes just a few seconds and dramatically improves measurement accuracy (±1-2cm vs ±3-6cm).\n\nPlease choose a calibration method to continue.',
+      'Entering your height takes just a few seconds and improves scan confidence.\n\nPlease choose a calibration method to continue.',
       [{ text: 'OK' }]
     );
   };
@@ -171,14 +170,14 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
           <Text style={styles.headerTitle}>Calibration Setup</Text>
           <Text style={styles.headerSubtitle}>
             Calibration converts pixels to real-world centimeters.{'\n'}
-            This is the #1 factor for measurement accuracy.
+            This is the #1 factor for scan confidence.
           </Text>
         </View>
 
         <View style={styles.comparisonBox}>
           <View style={styles.comparisonRow}>
-            <Text style={styles.comparisonBad}>Without: ±3-6cm ❌</Text>
-            <Text style={styles.comparisonGood}>With: ±1-2cm ✅</Text>
+            <Text style={styles.comparisonBad}>Without: lower confidence</Text>
+            <Text style={styles.comparisonGood}>With: higher confidence</Text>
           </View>
         </View>
 
@@ -307,7 +306,7 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
             </>
           )}
           <Text style={styles.fieldHint}>
-            Measure without shoes. Stand straight against a wall for best accuracy.
+            Measure without shoes. Stand straight against a wall for best consistency.
             {heightUnit === 'cm'
               ? ' Common conversions: 5\'10" = 178cm, 6\'0" = 183cm'
               : ''}
@@ -387,7 +386,7 @@ export default function CalibrationScreen({ navigation, route }: CalibrationScre
           />
           <Text style={styles.fieldHint}>
             Use a soft tape measure. Wrap snugly without compressing skin.
-            This anchors all calculated measurements for ±1cm accuracy.
+            This anchors calculated measurements to a verified body measurement.
           </Text>
         </View>
 

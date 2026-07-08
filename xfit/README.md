@@ -2,7 +2,7 @@
 
 <div align="center">
 
-📏 **Accurate Body Measurements Using AI Technology** 📸
+📏 **Guided Body Measurement Estimates Using AI Technology** 📸
 
 *Perfect Fit, Every Time*
 
@@ -10,7 +10,7 @@
 
 ## 🎯 Overview
 
-Tailor-X is a modern React Native mobile application that uses AI-powered camera technology to capture accurate body measurements. Built with Expo and TypeScript, it provides a seamless experience for users to scan, track, and manage their body measurements for perfect-fitting clothing.
+Tailor-X is a modern React Native mobile application that uses AI-powered camera technology to capture guided body measurement estimates. Built with Expo and TypeScript, it helps users scan, track, and manage measurements while the team validates real-world accuracy against tape measurements.
 
 ## ✨ Features
 

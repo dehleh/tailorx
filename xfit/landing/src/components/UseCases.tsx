@@ -3,9 +3,9 @@ const CASES = [
     tag: 'For fashion brands',
     title: 'Stop the silent revenue leak from returns.',
     points: [
-      'Cut size-related returns by up to 38%',
-      'Personalised size guidance on PDPs',
-      'Shopify, WooCommerce, and headless ready',
+      'Measure size-related return impact in pilot',
+      'Personalised size guidance experiments',
+      'Storefront integrations planned with pilot partners',
     ],
   },
   {
@@ -14,7 +14,7 @@ const CASES = [
     points: [
       'Take orders from anywhere in the country',
       'Digital measurement records per customer',
-      'Reusable size charts and growth tracking',
+      'Reusable size charts and scan-confidence tracking',
     ],
   },
   {
@@ -23,7 +23,7 @@ const CASES = [
     points: [
       'Repeatable, member-friendly assessments',
       'Branded customer portals',
-      'Export and share results in one tap',
+      'Expiring read-only share links',
     ],
   },
 ];

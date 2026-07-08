@@ -1,7 +1,7 @@
 /**
  * Production Image Validation Service
  * 
- * Performs real image quality analysis for body measurement accuracy.
+ * Performs real image quality analysis for body measurement confidence.
  * Replaces the mock Math.random() validation with actual checks.
  * Includes blur detection and brightness/contrast analysis.
  */
@@ -206,6 +206,7 @@ class ProductionImageValidationService {
     const apiKey = process.env.EXPO_PUBLIC_POSE_API_KEY || '';
     const baseUrl = apiUrl.replace(/\/pose\/?.*$/, '');
     const qualityUrl = `${baseUrl}/image/quality`;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
@@ -218,7 +219,7 @@ class ProductionImageValidationService {
       }
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(qualityUrl, {
         method: 'POST',
@@ -227,6 +228,7 @@ class ProductionImageValidationService {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      timeoutId = null;
 
       if (!response.ok) return null;
 
@@ -274,6 +276,7 @@ class ProductionImageValidationService {
 
       return checks;
     } catch {
+      if (timeoutId) clearTimeout(timeoutId);
       // Server unavailable — graceful degradation, skip server checks
       return null;
     }

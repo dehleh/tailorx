@@ -15,6 +15,9 @@ export interface EnterpriseBootstrapResult {
   organizationId: string;
   adminUserId: string;
   licenseId: string;
+  licenseStatus?: string;
+  trialScanQuota?: number;
+  trialEndsAt?: string;
   defaultInviteCode: string;
   billingCheckoutUrl: string;
 }

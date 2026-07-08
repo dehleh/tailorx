@@ -6,7 +6,7 @@ const features = [
   {
     icon: '📸',
     title: 'Camera-Based Scanning',
-    description: 'Get accurate measurements using just your phone',
+    description: 'Capture guided body measurements using just your phone',
   },
   {
     icon: '🔒',
@@ -33,7 +33,7 @@ export default function OnboardingScreen({ navigation }: any) {
           </View>
           <Text style={styles.heroTitle}>Perfect fit, everytime</Text>
           <Text style={styles.heroSubtitle}>
-            Get professional body measurements without visiting a tailor. All you need is your smartphone.
+            Capture guided body measurements without visiting a tailor. All you need is your smartphone.
           </Text>
         </View>
 

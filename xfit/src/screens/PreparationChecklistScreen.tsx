@@ -61,7 +61,7 @@ export default function PreparationChecklistScreen({ navigation }: any) {
   );
   const checkedCount = items.filter((i) => i.checked).length;
   const allChecked = checkedCount === items.length;
-  const genderSelected = selectedGender === 'male' || selectedGender === 'female';
+  const genderSelected = ['male', 'female', 'other'].includes(selectedGender);
   const canStart = allChecked && genderSelected;
   const progress = Math.round((checkedCount / items.length) * 100);
 
@@ -69,7 +69,7 @@ export default function PreparationChecklistScreen({ navigation }: any) {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item)));
   };
 
-  const handleGenderSelect = (gender: 'male' | 'female') => {
+  const handleGenderSelect = (gender: 'male' | 'female' | 'other') => {
     setSelectedGender(gender);
     updateUser({ gender });
   };
@@ -96,7 +96,7 @@ export default function PreparationChecklistScreen({ navigation }: any) {
 
         {/* Gender selector */}
         <View style={styles.genderSection}>
-          <Text style={styles.genderLabel}>Select your gender *</Text>
+          <Text style={styles.genderLabel}>Select your fit profile *</Text>
           <View style={styles.genderRow}>
             <TouchableOpacity
               style={[styles.genderButton, selectedGender === 'male' && styles.genderButtonActive]}
@@ -114,9 +114,17 @@ export default function PreparationChecklistScreen({ navigation }: any) {
               <Text style={styles.genderEmoji}>👩</Text>
               <Text style={[styles.genderText, selectedGender === 'female' && styles.genderTextActive]}>Female</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.genderButton, selectedGender === 'other' && styles.genderButtonActive]}
+              onPress={() => handleGenderSelect('other')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.genderEmoji}>Fit</Text>
+              <Text style={[styles.genderText, selectedGender === 'other' && styles.genderTextActive]}>Other</Text>
+            </TouchableOpacity>
           </View>
           {!genderSelected && (
-            <Text style={styles.genderHint}>Required for accurate measurements</Text>
+            <Text style={styles.genderHint}>Used to choose the closest body-measurement model</Text>
           )}
         </View>
 

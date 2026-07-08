@@ -106,6 +106,53 @@ def test_billing_checkout_returns_paystack_url(app_module, client, monkeypatch):
     assert data["status"] == "pending"
 
 
+# --- Measurement sharing ---
+
+def test_measurement_share_link_can_be_read_and_revoked(client):
+    create = client.post(
+        "/v1/shares",
+        json={
+            "measurementId": "m_test_share_1",
+            "measurements": {
+                "chest": 101.5,
+                "waist": 82.25,
+                "ignoredZero": 0,
+            },
+            "unit": "cm",
+            "ttlHours": 1,
+            "createdByEmail": "owner@example.com",
+        },
+    )
+    assert create.status_code == 200, create.text
+    share = create.json()
+    assert share["accessScope"] == "read_only"
+    assert "/v1/shares/" in share["shareUrl"]
+    assert share["token"] not in share["revokeToken"]
+
+    read = client.get(f"/v1/shares/{share['token']}")
+    assert read.status_code == 200, read.text
+    data = read.json()
+    assert data["measurementId"] == "m_test_share_1"
+    assert data["accessScope"] == "read_only"
+    assert data["measurements"] == {"chest": 101.5, "waist": 82.25}
+
+    bad_revoke = client.post(
+        f"/v1/shares/{share['token']}/revoke",
+        json={"revokeToken": "not_the_creator_token"},
+    )
+    assert bad_revoke.status_code == 403
+
+    revoke = client.post(
+        f"/v1/shares/{share['token']}/revoke",
+        json={"revokeToken": share["revokeToken"]},
+    )
+    assert revoke.status_code == 200, revoke.text
+    assert revoke.json() == {"revoked": True}
+
+    read_after_revoke = client.get(f"/v1/shares/{share['token']}")
+    assert read_after_revoke.status_code == 410
+
+
 # --- Paystack webhook ---
 
 def _sign(secret: str, body: bytes) -> str:

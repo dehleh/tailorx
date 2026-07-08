@@ -130,7 +130,7 @@ export default function DashboardPage() {
 
   const { organization, license, metrics, recentSessions, inviteLinks } = data;
   const usagePct = license.scanQuota > 0 ? Math.round((license.scansUsed / license.scanQuota) * 100) : 0;
-  const licenseColor = license.status === 'active' ? 'var(--success)' : license.status === 'past_due' ? 'var(--warning)' : 'var(--error)';
+  const licenseColor = license.status === 'active' ? 'var(--success)' : ['past_due', 'trialing'].includes(license.status) ? 'var(--warning)' : 'var(--error)';
 
   return (
     <>
@@ -146,8 +146,10 @@ export default function DashboardPage() {
             <span style={{ background: licenseColor, color: '#fff', borderRadius: 20, padding: '4px 12px', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase' }}>
               License: {license.status}
             </span>
-            {(license.status === 'past_due' || license.status !== 'active') && (
-              <button className={styles.btnPrimary} onClick={handleCheckout}>Renew with Paystack</button>
+            {license.status !== 'active' && (
+              <button className={styles.btnPrimary} onClick={handleCheckout}>
+                {license.status === 'trialing' ? 'Activate with Paystack' : 'Renew with Paystack'}
+              </button>
             )}
           </div>
         </div>
@@ -183,7 +185,7 @@ export default function DashboardPage() {
             <div className={styles.progressFill} style={{ width: `${usagePct}%`, background: usagePct > 90 ? 'var(--error)' : usagePct > 70 ? 'var(--warning)' : 'var(--success)' }} />
           </div>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-            {license.remainingQuota} remaining · Renews: {license.endsAt ? new Date(license.endsAt).toLocaleDateString() : '—'}
+            {license.remainingQuota} remaining - {license.status === 'trialing' ? 'Trial ends' : 'Renews'}: {license.endsAt ? new Date(license.endsAt).toLocaleDateString() : 'N/A'}
           </p>
           {usagePct >= 80 && (
             <button className={styles.btnPrimary} style={{ marginTop: '0.75rem' }} onClick={handleCheckout}>

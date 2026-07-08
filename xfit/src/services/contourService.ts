@@ -5,9 +5,9 @@
  * Selfie Segmentation to extract the body silhouette, then measures
  * pixel widths at key cross-sections (neck, chest, waist, hips, thigh, calf).
  * 
- * These real contour widths replace or blend with the skeleton-only
- * heuristics used by the measurement engine, dramatically improving
- * circumference accuracy from ±5-8cm down to ±2-3cm.
+ * These contour widths replace or blend with the skeleton-only heuristics
+ * used by the measurement engine to improve circumference confidence.
+ * Exact error ranges must come from a tape-measure validation study.
  */
 
 import * as FileSystem from 'expo-file-system/legacy';

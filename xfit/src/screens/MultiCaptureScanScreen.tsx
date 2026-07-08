@@ -36,6 +36,7 @@ import { useUserStore } from '../stores/userStore';
 import { BodyMeasurement } from '../types/measurements';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BURST_TOTAL_FRAMES = 5;
 
 // ============================================================
 // TYPES
@@ -77,6 +78,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
   const CAPTURE_STEPS: Array<'front' | 'side' | 'back'> = ['front', 'side', 'back'];
   const currentStepIndex = CAPTURE_STEPS.indexOf(currentStep as any);
+  const hasAcceptedSideCapture = captures.some(c => c.type === 'side');
 
   // ============================================================
   // CAPTURE HANDLER
@@ -152,9 +154,9 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       // 3. Process with pose detection (multi-frame burst averaging)
       setProcessingMessage(`Analyzing ${currentStep} view...`);
 
-      // Capture 2 additional rapid frames for burst averaging (#1)
+      // Capture additional rapid frames for burst averaging and best-frame selection.
       const burstUris: string[] = [imageUri];
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < BURST_TOTAL_FRAMES - 1; i++) {
         try {
           const burstPhoto = await cameraRef.current.takePictureAsync({
             quality: 0.9,
@@ -206,22 +208,16 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         currentStep as 'front' | 'side' | 'back'
       );
 
-      // Warn user if pose quality is suboptimal (but still usable)
+      // Hard gate: do not accept captures that fail full-body, centering,
+      // distance, posture, or angle checks.
       if (!poseFeedback.overallReady && poseResult.confidence >= 0.3) {
-        const proceed = await new Promise<boolean>((resolve) => {
-          Alert.alert(
-            'Pose Issue Detected',
-            poseFeedback.issues.join('\n') + '\n\nProceed with this capture anyway?',
-            [
-              { text: 'Retake', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Use Anyway', onPress: () => resolve(true) },
-            ]
-          );
-        });
-        if (!proceed) {
-          setIsCapturing(false);
-          return;
-        }
+        setIsCapturing(false);
+        Alert.alert(
+          'Capture Gate Failed',
+          poseFeedback.issues.join('\n') + '\n\nPlease adjust and retake.',
+          [{ text: 'Retake', style: 'cancel' }]
+        );
+        return;
       }
 
       const newCapture: CapturedAngle = {
@@ -242,14 +238,14 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         const nextStep = CAPTURE_STEPS[nextStepIndex];
         const isSideNext = nextStep === 'side';
 
-        // Encourage side-view capture with accuracy gain info
+        // Encourage side-view capture because it gives circumference estimates more evidence.
         Alert.alert(
           `${capitalize(currentStep)} View Captured! ✅`,
           `Confidence: ${Math.round(poseResult.confidence * 100)}%\n` +
           `${poseResult.landmarks.length} landmarks detected\n\n` +
           `Next: ${capitalize(nextStep)} view` +
           (isSideNext
-            ? '\n\n⚡ Adding a side view improves circumference accuracy by 40-60% (chest, waist, hips).'
+            ? '\n\nAdding a side view gives the engine depth evidence for chest, waist, and hips.'
             : ''),
           [
             {
@@ -280,6 +276,18 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   // ============================================================
 
   const processMeasurements = async (allCaptures: CapturedAngle[]) => {
+    if (!allCaptures.some(c => c.type === 'side')) {
+      setCurrentStep('side');
+      setIsCapturing(false);
+      setIsProcessing(false);
+      Alert.alert(
+        'Side View Required',
+        'Capture a side view before finishing. Chest, waist, hips, thigh, and calf need side-view depth evidence.',
+        [{ text: 'Capture Side View' }]
+      );
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingProgress(10);
     setProcessingMessage('Combining multi-angle data...');
@@ -392,9 +400,9 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         anchorMeasurement
       );
 
-      // Analyze accuracy
+      // Analyze scan confidence
       setProcessingProgress(70);
-      setProcessingMessage('Analyzing accuracy...');
+      setProcessingMessage('Analyzing scan confidence...');
 
       const measurements = useMeasurementStore.getState().measurements;
       const accuracyReport = accuracyEngine.analyzeAccuracy(result, measurements);
@@ -452,6 +460,9 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           confidence: result.confidence,
           anglesUsed: result.metadata.anglesUsed,
           calibrationMethod: result.metadata.calibrationMethod,
+          circumferenceSource: result.metadata.circumferenceSource,
+          missingRequiredAngles: result.metadata.missingRequiredAngles,
+          calibrationConfidence: result.metadata.calibrationConfidence,
           engineVersion: result.metadata.engineVersion,
           processingTimeMs: result.metadata.processingTimeMs,
           warnings: result.warnings,
@@ -488,6 +499,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       navigation.navigate('ScanResults', {
         result,
         accuracyReport,
+        measurementId: newMeasurement.id,
       });
       resetScan();
     } catch (error: any) {
@@ -520,22 +532,14 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       return;
     }
 
-    // If side view hasn't been captured yet, strongly encourage it
-    const hasSideCapture = captures.some(c => c.type === 'side');
-    if (!hasSideCapture) {
+    // Side view is required before circumference measurements can be produced.
+    if (!hasAcceptedSideCapture) {
       Alert.alert(
-        'Side View Recommended',
-        'Without a side view, circumference measurements (chest, waist, hips) will be estimated from averages, reducing accuracy by 40-60%.\n\n' +
-        'Are you sure you want to skip?',
-        [
-          { text: 'Capture Side View', style: 'cancel' },
-          {
-            text: 'Skip Anyway',
-            style: 'destructive',
-            onPress: () => processMeasurements(captures),
-          },
-        ]
+        'Side View Required',
+        'Capture a side view before finishing. Front view gives width; side view gives depth for circumferences.',
+        [{ text: 'Capture Side View', style: 'cancel' }]
       );
+      setCurrentStep('side');
       return;
     }
 
@@ -560,8 +564,8 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         <Text style={styles.permissionIcon}>📸</Text>
         <Text style={styles.permissionTitle}>Camera Access Required</Text>
         <Text style={styles.permissionText}>
-          Tailor-X needs camera access to scan your body for accurate measurements.
-          Your photos are processed on-device and never shared.
+          Tailor-X needs camera access to scan your body for measurement estimates.
+          Depending on your settings, photos may be processed locally or by Tailor-X cloud services.
         </Text>
         <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
           <Text style={styles.primaryButtonText}>Grant Camera Access</Text>
@@ -663,14 +667,18 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           <TouchableOpacity
             style={styles.skipButton}
             onPress={skipStep}
-            disabled={captures.length === 0}
+            disabled={captures.length === 0 || !hasAcceptedSideCapture}
           >
             <Text style={[
               styles.skipText,
-              captures.length === 0 && styles.skipTextDisabled,
+              (captures.length === 0 || !hasAcceptedSideCapture) && styles.skipTextDisabled,
+              (captures.length > 0 && !hasAcceptedSideCapture) && styles.skipTextHidden,
             ]}>
               {captures.length > 0 ? 'Finish ▶' : ''}
             </Text>
+            {captures.length > 0 && !hasAcceptedSideCapture && (
+              <Text style={styles.sideRequiredText}>Side required</Text>
+            )}
           </TouchableOpacity>
 
           {/* Capture button */}
@@ -855,6 +863,15 @@ const styles = StyleSheet.create({
   },
   skipTextDisabled: {
     opacity: 0,
+  },
+  skipTextHidden: {
+    opacity: 0,
+  },
+  sideRequiredText: {
+    color: Theme.colors.white,
+    fontSize: 11,
+    fontWeight: Theme.fontWeight.semibold,
+    textAlign: 'center',
   },
   captureButton: {
     width: 76,

@@ -126,6 +126,8 @@ PAYSTACK_API_BASE = os.environ.get("PAYSTACK_API_BASE", "https://api.paystack.co
 WEB_APP_URL = os.environ.get("WEB_APP_URL", "https://admin.tailorxfit.com")
 OVERAGE_SCAN_PRICE = float(os.environ.get("TAILORX_OVERAGE_SCAN_PRICE", "500"))   # in major currency units
 OVERAGE_GRACE_SCANS = int(os.environ.get("TAILORX_OVERAGE_GRACE_SCANS", "25"))
+TRIAL_SCAN_QUOTA = int(os.environ.get("TAILORX_TRIAL_SCAN_QUOTA", "50"))
+TRIAL_DAYS = int(os.environ.get("TAILORX_TRIAL_DAYS", "14"))
 
 # CORS allowlist — comma-separated list of allowed origins. Defaults to web app + localhost dev.
 _default_origins = f"{WEB_APP_URL},https://tailorxfit.com,https://www.tailorxfit.com,https://tailorx-landing-production.up.railway.app,http://localhost:3000,http://localhost:3001,http://localhost:19006"
@@ -369,6 +371,18 @@ class WaitlistRequest(BaseModel):
     role: Optional[str] = Field(default=None, max_length=80)
     useCase: Optional[str] = Field(default=None, max_length=500)
     source: Optional[str] = Field(default=None, max_length=80)
+
+
+class MeasurementShareCreateRequest(BaseModel):
+    measurementId: str = Field(min_length=1, max_length=120)
+    measurements: dict[str, float]
+    unit: str = Field(default="cm", max_length=8)
+    ttlHours: int = Field(default=168, ge=1, le=720)
+    createdByEmail: Optional[EmailStr] = None
+
+
+class MeasurementShareRevokeRequest(BaseModel):
+    revokeToken: str = Field(min_length=16, max_length=128)
 
 # ============================================================
 # BLAZEPOSE LANDMARK NAMES (33 total)
@@ -794,6 +808,20 @@ def init_enterprise_db() -> None:
                 FOREIGN KEY (invite_link_id) REFERENCES invite_links(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS measurement_shares (
+                id TEXT PRIMARY KEY,
+                token TEXT NOT NULL UNIQUE,
+                revoke_token TEXT NOT NULL,
+                measurement_id TEXT NOT NULL,
+                measurements_json TEXT NOT NULL,
+                unit TEXT NOT NULL,
+                created_by_email TEXT,
+                access_scope TEXT NOT NULL DEFAULT 'read_only',
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                revoked_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS billing_records (
                 id TEXT PRIMARY KEY,
                 organization_id TEXT NOT NULL,
@@ -872,6 +900,8 @@ def init_enterprise_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_invite_links_code ON invite_links(code)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_org_id ON measurement_sessions(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON measurement_sessions(customer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_measurement_shares_token ON measurement_shares(token)",
+            "CREATE INDEX IF NOT EXISTS idx_measurement_shares_measurement_id ON measurement_shares(measurement_id)",
             "CREATE INDEX IF NOT EXISTS idx_billing_org_id ON billing_records(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_billing_paystack_ref ON billing_records(paystack_reference)",
             "CREATE INDEX IF NOT EXISTS idx_waitlist_created ON waitlist(created_at)",
@@ -927,6 +957,8 @@ def _overage_units(license_row: sqlite3.Row) -> int:
 
 
 def _can_consume_scan(license_row: sqlite3.Row) -> bool:
+    if license_row["status"] == "trialing":
+        return _remaining_quota(license_row) > 0
     return license_row["status"] == 'active' and _overage_units(license_row) < OVERAGE_GRACE_SCANS
 
 
@@ -979,6 +1011,12 @@ def _sync_overage_record(conn: sqlite3.Connection, organization_id: str, license
         ),
     )
 
+
+
+def _paid_quota_from_amount(amount: float) -> int:
+    # Bootstrap currently prices paid quota at 0.35 major currency units per scan.
+    # Keep a floor so small test payments still convert the license out of trial.
+    return max(TRIAL_SCAN_QUOTA, int(round(amount / 0.35))) if amount > 0 else TRIAL_SCAN_QUOTA
 
 
 def _build_checkout_url(organization_id: str, license_id: str) -> str:
@@ -1457,6 +1495,126 @@ async def waitlist_stats():
         conn.close()
 
 
+def _share_base_url(request: Request) -> str:
+    configured = os.environ.get("TAILORX_SHARE_BASE_URL", "").strip()
+    if configured:
+        return configured.rstrip("/")
+    return f"{str(request.base_url).rstrip('/')}/v1/shares"
+
+
+def _parse_enterprise_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", ""))
+
+
+@app.post("/v1/shares")
+async def create_measurement_share(request: Request, payload: MeasurementShareCreateRequest):
+    """Create an expiring, read-only measurement share link.
+
+    The share stores derived measurements only, never captured photos.
+    """
+    if payload.unit not in ("cm", "inch"):
+        raise HTTPException(status_code=400, detail="unit must be 'cm' or 'inch'")
+    clean_measurements = {
+        key: float(value)
+        for key, value in payload.measurements.items()
+        if isinstance(value, (int, float)) and float(value) > 0
+    }
+    if not clean_measurements:
+        raise HTTPException(status_code=400, detail="At least one positive measurement is required")
+
+    share_id = _new_id("share")
+    token = secrets.token_urlsafe(24)
+    revoke_token = secrets.token_urlsafe(24)
+    now = datetime.utcnow()
+    expires_at = now + timedelta(hours=payload.ttlHours)
+    conn = _enterprise_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO measurement_shares (
+                id, token, revoke_token, measurement_id, measurements_json, unit,
+                created_by_email, access_scope, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'read_only', ?, ?)
+            """,
+            (
+                share_id,
+                token,
+                revoke_token,
+                payload.measurementId,
+                json.dumps(clean_measurements, separators=(",", ":")),
+                payload.unit,
+                str(payload.createdByEmail).lower() if payload.createdByEmail else None,
+                now.isoformat() + "Z",
+                expires_at.isoformat() + "Z",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "id": share_id,
+        "token": token,
+        "shareUrl": f"{_share_base_url(request)}/{token}",
+        "revokeToken": revoke_token,
+        "accessScope": "read_only",
+        "expiresAt": expires_at.isoformat() + "Z",
+        "createdAt": now.isoformat() + "Z",
+    }
+
+
+@app.get("/v1/shares/{token}")
+async def get_measurement_share(token: str):
+    """Read a non-revoked, non-expired measurement share."""
+    conn = _enterprise_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM measurement_shares WHERE token = ?",
+            (token,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Share link not found")
+    if row["revoked_at"]:
+        raise HTTPException(status_code=410, detail="Share link has been revoked")
+    if datetime.utcnow() > _parse_enterprise_time(row["expires_at"]):
+        raise HTTPException(status_code=410, detail="Share link has expired")
+
+    return {
+        "measurementId": row["measurement_id"],
+        "measurements": json.loads(row["measurements_json"]),
+        "unit": row["unit"],
+        "accessScope": row["access_scope"],
+        "expiresAt": row["expires_at"],
+        "createdAt": row["created_at"],
+    }
+
+
+@app.post("/v1/shares/{token}/revoke")
+async def revoke_measurement_share(token: str, payload: MeasurementShareRevokeRequest):
+    """Revoke a measurement share using the creator-only revoke token."""
+    conn = _enterprise_connection()
+    try:
+        row = conn.execute(
+            "SELECT revoke_token, revoked_at FROM measurement_shares WHERE token = ?",
+            (token,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Share link not found")
+        if not hmac.compare_digest(row["revoke_token"], payload.revokeToken):
+            raise HTTPException(status_code=403, detail="Invalid revoke token")
+        if not row["revoked_at"]:
+            conn.execute(
+                "UPDATE measurement_shares SET revoked_at = ? WHERE token = ?",
+                (_enterprise_now(), token),
+            )
+            conn.commit()
+        return {"revoked": True}
+    finally:
+        conn.close()
+
+
 @app.post("/v1/enterprise/bootstrap")
 async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
     now = _enterprise_now()
@@ -1466,6 +1624,8 @@ async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
     license_id = _new_id("lic")
     invite_id = _new_id("inv")
     invite_code = f"{organization_slug}-{secrets.token_hex(3)}"
+    trial_scan_quota = max(1, min(request.scanQuota, TRIAL_SCAN_QUOTA))
+    trial_ends_at = (datetime.utcnow() + timedelta(days=TRIAL_DAYS)).isoformat() + "Z"
 
     conn = _enterprise_connection()
     try:
@@ -1497,17 +1657,17 @@ async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
                 id, organization_id, seats_purchased, scan_quota, scans_used, status,
                 billing_interval, amount, currency, starts_at, ends_at, created_at
             )
-            VALUES (?, ?, ?, ?, 0, 'active', 'annual', ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, 0, 'trialing', 'trial', ?, ?, ?, ?, ?)
             """,
             (
                 license_id,
                 organization_id,
                 request.seats,
-                request.scanQuota,
+                trial_scan_quota,
                 max(request.scanQuota * 0.35, 99),
                 DEFAULT_BILLING_CURRENCY,
                 now,
-                (datetime.utcnow() + timedelta(days=365)).isoformat() + "Z",
+                trial_ends_at,
                 now,
             ),
         )
@@ -1550,6 +1710,9 @@ async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
         f"<p>Sign in to your admin dashboard at "
         f"<a href=\"{login_url}\">{login_url}</a> using <strong>{owner_email}</strong>. "
         f"You'll receive a one-time code by email to verify it's you.</p>"
+        f"<p>Your workspace starts on a {TRIAL_DAYS}-day trial with "
+        f"{trial_scan_quota} included scans. Complete billing in the dashboard "
+        f"to activate the full paid quota.</p>"
         f"<p>Default customer invite code: <code>{invite_code}</code></p>"
         f"<p>— Tailor-X</p>"
     )
@@ -1566,6 +1729,9 @@ async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
         "organizationId": organization_id,
         "adminUserId": admin_user_id,
         "licenseId": license_id,
+        "licenseStatus": "trialing",
+        "trialScanQuota": trial_scan_quota,
+        "trialEndsAt": trial_ends_at,
         "defaultInviteCode": invite_code,
         "billingCheckoutUrl": _build_checkout_url(organization_id, license_id),
     }
@@ -1680,8 +1846,8 @@ async def start_enterprise_session(invite_code: str, request: EnterpriseSessionS
             raise HTTPException(status_code=404, detail="Invite link not found")
 
         license_row = _get_license_for_org(conn, invite["organization_id"])
-        if license_row["status"] != "active":
-            raise HTTPException(status_code=403, detail="Organization license is not active")
+        if license_row["status"] not in ("active", "trialing"):
+            raise HTTPException(status_code=403, detail="Organization license is not active or trialing")
         if not _can_consume_scan(license_row):
             raise HTTPException(status_code=403, detail="Scan quota exhausted and overage grace limit reached")
 
@@ -1795,6 +1961,7 @@ async def create_billing_checkout(
             (request.organizationId,),
         ).fetchone()
         customer_email = admin_row["email"] if admin_row else ""
+        checkout_interval = "annual" if request.billingInterval == "trial" else request.billingInterval
 
         result = _paystack_initialize_transaction(
             org_id=request.organizationId,
@@ -1818,7 +1985,7 @@ async def create_billing_checkout(
                 request.licenseId,
                 request.amount,
                 request.currency,
-                request.billingInterval,
+                checkout_interval,
                 result["checkoutUrl"],
                 result["reference"],
                 now,
@@ -1903,18 +2070,27 @@ async def paystack_webhook(request: Request):
                 (customer_code, subscription_code, reference, reference),
             )
             target_license_id = license_id
-            if not target_license_id and reference:
+            paid_quota: Optional[int] = None
+            if reference:
                 row = conn.execute(
-                    "SELECT license_id FROM billing_records WHERE paystack_reference=? OR external_reference=?",
+                    "SELECT license_id, amount FROM billing_records WHERE paystack_reference=? OR external_reference=?",
                     (reference, reference),
                 ).fetchone()
                 if row:
-                    target_license_id = row["license_id"]
+                    if not target_license_id:
+                        target_license_id = row["license_id"]
+                    paid_quota = _paid_quota_from_amount(float(row["amount"] or 0))
             if target_license_id:
-                conn.execute(
-                    "UPDATE licenses SET status='active', ends_at=? WHERE id=?",
-                    ((datetime.utcnow() + timedelta(days=365)).isoformat() + "Z", target_license_id),
-                )
+                if paid_quota:
+                    conn.execute(
+                        "UPDATE licenses SET status='active', billing_interval='annual', scan_quota=?, ends_at=? WHERE id=?",
+                        (paid_quota, (datetime.utcnow() + timedelta(days=365)).isoformat() + "Z", target_license_id),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE licenses SET status='active', billing_interval='annual', ends_at=? WHERE id=?",
+                        ((datetime.utcnow() + timedelta(days=365)).isoformat() + "Z", target_license_id),
+                    )
             conn.commit()
 
         elif event_type == "subscription.create":

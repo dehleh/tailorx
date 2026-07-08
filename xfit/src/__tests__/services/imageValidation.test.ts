@@ -2,11 +2,15 @@
  * Production Image Validation Service Tests
  */
 
-import { productionImageValidation } from '../../services/productionImageValidation';
-
 // Mock expo-file-system
+jest.mock('expo-file-system/legacy', () => ({
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: true, size: 500000 }),
+  readAsStringAsync: jest.fn().mockResolvedValue('base64-image'),
+}));
+
 jest.mock('expo-file-system', () => ({
   getInfoAsync: jest.fn().mockResolvedValue({ exists: true, size: 500000 }),
+  readAsStringAsync: jest.fn().mockResolvedValue('base64-image'),
 }));
 
 // Mock RN Image
@@ -18,7 +22,20 @@ jest.mock('react-native', () => ({
   },
 }));
 
+import { productionImageValidation } from '../../services/productionImageValidation';
+
 describe('ProductionImageValidationService', () => {
+  beforeEach(() => {
+    const FileSystem = require('expo-file-system/legacy');
+    FileSystem.getInfoAsync.mockResolvedValue({ exists: true, size: 500000 });
+    FileSystem.readAsStringAsync.mockResolvedValue('base64-image');
+    jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   describe('validate', () => {
     it('should validate a good image', async () => {
       const result = await productionImageValidation.validate('file:///good-image.jpg');
@@ -30,8 +47,9 @@ describe('ProductionImageValidationService', () => {
     });
 
     it('should reject inaccessible files', async () => {
-      const FileSystem = require('expo-file-system');
-      FileSystem.getInfoAsync.mockResolvedValueOnce({ exists: false });
+      const FileSystem = require('expo-file-system/legacy');
+      FileSystem.getInfoAsync.mockResolvedValue({ exists: false });
+      FileSystem.readAsStringAsync.mockRejectedValue(new Error('missing'));
 
       const result = await productionImageValidation.validate('file:///missing.jpg');
 

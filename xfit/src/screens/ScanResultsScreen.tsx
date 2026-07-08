@@ -33,6 +33,7 @@ interface ScanResultsScreenProps {
     params: {
       result: MeasurementResult;
       accuracyReport: AccuracyReport;
+      measurementId?: string;
     };
   };
 }
@@ -111,7 +112,8 @@ export default function ScanResultsScreen({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   // Measurement is auto-saved during processing — mark as already saved
   const [saved, setSaved] = useState(true);
-  const measurementId = useMemo(() => generateId(), []);
+  const generatedMeasurementId = useMemo(() => generateId(), []);
+  const measurementId = route?.params?.measurementId || generatedMeasurementId;
 
   const formatValue = (cm: number) => {
     return unit === 'cm'
@@ -221,13 +223,13 @@ export default function ScanResultsScreen({
           ))}
         </View>
 
-        {/* Accuracy */}
+        {/* Scan confidence */}
         <View style={styles.accuracyCard}>
           <Text style={styles.accuracyIcon}>🎯</Text>
           <View style={styles.accuracyTextContent}>
-            <Text style={styles.accuracyTitle}>Accuracy: {result.overallAccuracy}%</Text>
+            <Text style={styles.accuracyTitle}>Scan confidence: {result.overallAccuracy}%</Text>
             <Text style={styles.accuracyDesc}>
-              These measurements are comparable to professional tailoring standards.
+              Confidence reflects image quality, calibration, and angle coverage. It is not a proven tape-measure accuracy guarantee.
             </Text>
           </View>
         </View>
@@ -354,6 +356,7 @@ export default function ScanResultsScreen({
         measurementId={measurementId}
         measurements={result.measurements}
         unit={unit}
+        createdByEmail={authUser?.email}
       />
     </>
   );

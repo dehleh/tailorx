@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity,
   TextInput, Share, Alert, Linking,
 } from 'react-native';
 import { Colors } from '../constants/colors';
-import { generateId } from '../utils/helpers';
+import { shareApi, ShareLinkResult } from '../services/shareApi';
 
 interface ShareModalProps {
   visible: boolean;
@@ -12,21 +12,58 @@ interface ShareModalProps {
   measurementId: string;
   measurements: Record<string, number>;
   unit: 'cm' | 'inch';
+  createdByEmail?: string;
 }
 
 const APP_DOWNLOAD_LINK = 'https://tailor-xfit.app/download';
 
-export default function ShareModal({ visible, onClose, measurementId, measurements, unit }: ShareModalProps) {
+export default function ShareModal({ visible, onClose, measurementId, measurements, unit, createdByEmail }: ShareModalProps) {
   const [email, setEmail] = useState('');
-  const shareLink = `https://tailor-xfit.app/m/${measurementId.slice(0, 8)}`;
+  const [share, setShare] = useState<ShareLinkResult | null>(null);
+  const [isCreatingShare, setIsCreatingShare] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  const createShareLink = async (): Promise<string | null> => {
+    if (share?.shareUrl) return share.shareUrl;
+
+    try {
+      setIsCreatingShare(true);
+      setShareError(null);
+      const result = await shareApi.createShare({
+        measurementId,
+        measurements,
+        unit,
+        createdByEmail,
+      });
+      setShare(result);
+      return result.shareUrl;
+    } catch {
+      setShareError('Could not create a secure share link. Please try again.');
+      return null;
+    } finally {
+      setIsCreatingShare(false);
+    }
+  };
+
+  useEffect(() => {
+    if (visible) {
+      createShareLink();
+    }
+  }, [visible, measurementId]);
 
   const handleCopyLink = async () => {
-    // In production, use Clipboard API
-    Alert.alert('Link Copied', 'Share link copied to clipboard');
+    const link = await createShareLink();
+    if (!link) return;
+    await Share.share({
+      message: link,
+      title: 'Tailor-XFit measurement link',
+    });
   };
 
   const handleWhatsApp = async () => {
-    const message = `Check out my body measurements from Tailor-XFit!\n\n${formatMeasurements()}\n\nView in the app: ${shareLink}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`;
+    const link = await createShareLink();
+    if (!link) return;
+    const message = `Check out my body measurements from Tailor-XFit!\n\n${formatMeasurements()}\n\nView read-only measurements: ${link}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`;
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
     try {
       const canOpen = await Linking.canOpenURL(url);
@@ -41,8 +78,10 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
   };
 
   const handleEmail = async () => {
+    const link = await createShareLink();
+    if (!link) return;
     const subject = 'My Body Measurements - Tailor-XFit';
-    const body = `Here are my body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nView in the app: ${shareLink}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`;
+    const body = `Here are my body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nView read-only measurements: ${link}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`;
     
     if (email) {
       const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -54,13 +93,26 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
   };
 
   const handleNativeShare = async () => {
+    const link = await createShareLink();
+    if (!link) return;
     try {
       await Share.share({
-        message: `My body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nView in the app: ${shareLink}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`,
+        message: `My body measurements from Tailor-XFit:\n\n${formatMeasurements()}\n\nView read-only measurements: ${link}\n\nDon't have Tailor-XFit? Download it here: ${APP_DOWNLOAD_LINK}`,
         title: 'My Measurements',
       });
     } catch {
       // User cancelled
+    }
+  };
+
+  const handleRevokeShare = async () => {
+    if (!share) return;
+    try {
+      await shareApi.revokeShare(share.token, share.revokeToken);
+      setShare(null);
+      setShareError('Link revoked. Create a new link to share again.');
+    } catch {
+      Alert.alert('Could not revoke link', 'Please try again.');
     }
   };
 
@@ -98,12 +150,18 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
           <View style={styles.linkSection}>
             <Text style={styles.linkLabel}>Share Link</Text>
             <View style={styles.linkRow}>
-              <Text style={styles.linkText} numberOfLines={1}>{shareLink}</Text>
+              <Text style={styles.linkText} numberOfLines={1}>
+                {isCreatingShare ? 'Creating secure link...' : share?.shareUrl || shareError || 'Tap share to create a link'}
+              </Text>
               <TouchableOpacity style={styles.copyButton} onPress={handleCopyLink}>
-                <Text style={styles.copyIcon}>📋</Text>
+                <Text style={styles.copyIcon}>Share</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.linkExpiry}>This link expires in 7 days</Text>
+            <Text style={styles.linkExpiry}>
+              {share?.expiresAt
+                ? `Expires ${new Date(share.expiresAt).toLocaleDateString()}`
+                : 'Links are read-only and expire automatically.'}
+            </Text>
           </View>
 
           {/* Quick Share */}
@@ -118,6 +176,14 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
               <Text style={styles.emailText}>Email</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity style={styles.nativeShareButton} onPress={handleNativeShare}>
+            <Text style={styles.nativeShareText}>More share options</Text>
+          </TouchableOpacity>
+          {share && (
+            <TouchableOpacity style={styles.revokeButton} onPress={handleRevokeShare}>
+              <Text style={styles.revokeText}>Revoke link</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Privacy notice */}
           <View style={styles.privacyNotice}>
@@ -125,7 +191,7 @@ export default function ShareModal({ visible, onClose, measurementId, measuremen
             <View style={styles.privacyTextContent}>
               <Text style={styles.privacyTitle}>Privacy:</Text>
               <Text style={styles.privacyDesc}>
-                Recipients can only view your measurements. They cannot modify or share them further.
+                Recipients get read-only access to derived measurements only. The creating device receives a revoke token for this link.
               </Text>
             </View>
           </View>
@@ -222,7 +288,9 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   copyIcon: {
-    fontSize: 18,
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   linkExpiry: {
     fontSize: 12,
@@ -237,7 +305,7 @@ const styles = StyleSheet.create({
   quickShareRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   shareMethodButton: {
     flex: 1,
@@ -272,6 +340,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.text.primary,
+  },
+  nativeShareButton: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.inputBg,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  nativeShareText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  revokeButton: {
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingVertical: 4,
+  },
+  revokeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.error,
   },
   privacyNotice: {
     flexDirection: 'row',

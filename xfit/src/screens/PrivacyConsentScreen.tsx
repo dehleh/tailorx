@@ -1,53 +1,55 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Linking } from 'react-native';
 import { Colors } from '../constants/colors';
 import { useAuthStore } from '../stores/authStore';
 
+const PRIVACY_POLICY_URL = 'https://tailorxfit.com/privacy';
+
 const privacyPoints = [
   {
-    icon: '🔐',
-    title: 'Data Encryption',
-    description: 'All measurements are encrypted and stored securely.',
+    icon: 'LOCK',
+    title: 'Protected Storage',
+    description: 'Measurements and profile details are stored in device secure storage where supported.',
   },
   {
-    icon: '👁️',
+    icon: 'SHARE',
     title: 'You Control Sharing',
-    description: 'Only you can decide who sees your measurements.',
+    description: 'Measurements are not shared unless you create a share link or send them to a tailor.',
   },
   {
-    icon: '🛡️',
-    title: 'Privacy First',
-    description: 'We never sell or share your data with third parties.',
+    icon: 'CLOUD',
+    title: 'Cloud Processing Notice',
+    description: 'Scan photos may be sent to Tailor-X cloud processors for pose and contour analysis, then discarded after processing.',
   },
 ];
 
-export default function PrivacyConsentScreen({ navigation }: any) {
+export default function PrivacyConsentScreen() {
   const { acceptPrivacy, completeOnboarding } = useAuthStore();
 
   const handleAccept = async () => {
     await acceptPrivacy();
     await completeOnboarding();
-    // Navigator will automatically switch to MainTabs when
-    // isAuthenticated && isOnboarded becomes true.
+    // Navigator switches to MainTabs when isAuthenticated && isOnboarded becomes true.
+  };
+
+  const openPrivacyPolicy = async () => {
+    await Linking.openURL(PRIVACY_POLICY_URL);
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Getting started</Text>
-        <TouchableOpacity onPress={handleAccept}>
-          <Text style={styles.skipText}>Skip</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.iconCircle}>
-          <Text style={styles.icon}>🛡️</Text>
+          <Text style={styles.icon}>Privacy</Text>
         </View>
 
         <Text style={styles.title}>Your Privacy Is Priority</Text>
         <Text style={styles.subtitle}>
-          Before we begin, here's how we protect your data
+          Review how scan data is handled before continuing.
         </Text>
 
         <View style={styles.points}>
@@ -66,16 +68,16 @@ export default function PrivacyConsentScreen({ navigation }: any) {
 
         <View style={styles.consentBox}>
           <Text style={styles.consentText}>
-            I understand that my data is processed securely and only I can share it. I consent to the scanning process.
+            I understand that scan photos may be processed locally or by Tailor-X cloud services, that derived measurements are stored on my device, and that I control sharing.
           </Text>
         </View>
       </ScrollView>
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.agreeButton} onPress={handleAccept} activeOpacity={0.8}>
-          <Text style={styles.agreeButtonText}>Agree & Continue  ✓</Text>
+          <Text style={styles.agreeButtonText}>Agree & Continue</Text>
         </TouchableOpacity>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={openPrivacyPolicy}>
           <Text style={styles.policyLink}>Read Full Privacy Policy</Text>
         </TouchableOpacity>
       </View>
@@ -101,11 +103,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.text.primary,
   },
-  skipText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.text.secondary,
-  },
   content: {
     paddingHorizontal: 24,
     paddingTop: 24,
@@ -122,7 +119,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   icon: {
-    fontSize: 36,
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   title: {
     fontSize: 22,
@@ -148,17 +147,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   pointDot: {
-    width: 40,
-    height: 40,
+    width: 48,
+    minHeight: 40,
     borderRadius: 20,
     backgroundColor: '#E0F7F5',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
     marginTop: 2,
+    paddingHorizontal: 6,
   },
   pointIcon: {
-    fontSize: 18,
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   pointText: {
     flex: 1,

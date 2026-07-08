@@ -38,9 +38,11 @@ export type ScanStackParamList = {
   Processing: {
     result: any;
     accuracyReport: any;
+    measurementId?: string;
   };
   ScanResults: {
     result: any;
     accuracyReport: any;
+    measurementId?: string;
   };
 };

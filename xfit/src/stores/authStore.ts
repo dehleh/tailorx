@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthUser } from '../types/auth';
+import { storageService } from '../services/storageService';
 
 interface AuthStore {
   user: AuthUser | null;
@@ -30,7 +30,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   setUser: async (user: AuthUser) => {
     try {
-      await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(user));
+      await storageService.saveSensitive(AUTH_KEY, user);
       set({
         user,
         isAuthenticated: true,
@@ -47,7 +47,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const current = get().user;
       if (!current) throw new Error('No user');
       const updated = { ...current, ...data };
-      await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+      await storageService.saveSensitive(AUTH_KEY, updated);
       set({
         user: updated,
         isOnboarded: updated.isOnboarded,
@@ -61,9 +61,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   loadAuth: async () => {
     try {
       set({ isLoading: true, error: null });
-      const data = await AsyncStorage.getItem(AUTH_KEY);
-      if (data) {
-        const user: AuthUser = JSON.parse(data);
+      const user = await storageService.loadSensitive<AuthUser>(AUTH_KEY);
+      if (user) {
         set({
           user,
           isAuthenticated: true,
@@ -80,7 +79,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   logout: async () => {
     try {
-      await AsyncStorage.removeItem(AUTH_KEY);
+      await storageService.removeSensitive(AUTH_KEY);
       set({ user: null, isAuthenticated: false, isOnboarded: false });
     } catch {
       set({ error: 'Failed to logout' });
@@ -91,7 +90,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     const current = get().user;
     if (current) {
       const updated = { ...current, isOnboarded: true };
-      await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+      await storageService.saveSensitive(AUTH_KEY, updated);
       set({ user: updated, isOnboarded: true });
     }
   },
@@ -100,7 +99,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     const current = get().user;
     if (current) {
       const updated = { ...current, isPrivacyAccepted: true };
-      await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+      await storageService.saveSensitive(AUTH_KEY, updated);
       set({ user: updated });
     }
   },

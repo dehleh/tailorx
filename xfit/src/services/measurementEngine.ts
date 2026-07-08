@@ -1,13 +1,13 @@
 /**
  * Production Measurement Engine
  * 
- * Core engine that calculates real body measurements from pose landmarks.
- * Uses biomechanical models and anthropometric data for accuracy.
+ * Core engine that estimates body measurements from pose landmarks.
+ * Uses biomechanical models and anthropometric data for confidence scoring.
  * 
- * Accuracy targets:
- * - Height: ±1cm (with calibration)
- * - Circumferences: ±2cm (with multi-angle + anthropometric correction)
- * - Linear measurements: ±1.5cm (shoulder width, sleeve, inseam)
+ * Validation targets:
+ * - Report confidence by body part.
+ * - Benchmark estimates against tape measurements before publishing MAE.
+ * - Treat output as fit guidance until validation supports stronger claims.
  */
 
 import { MeasurementPoint, ScanResult } from '../types/measurements';
@@ -34,13 +34,16 @@ export interface CaptureAngle {
 }
 
 export interface CalibrationReference {
-  type: 'credit_card' | 'a4_paper' | 'known_height' | 'ruler';
+  type: 'credit_card' | 'a4_paper' | 'known_height' | 'ruler' | 'aruco_marker' | 'floor_wall' | 'anchor_measurement';
   // Detected size in pixels
   pixelWidth: number;
   pixelHeight: number;
   // Real-world size in cm
   realWidthCm: number;
   realHeightCm: number;
+  // Calibration quality metadata
+  cmPerPixel?: number;
+  confidence?: number;
 }
 
 export interface MeasurementResult {
@@ -54,6 +57,9 @@ export interface MeasurementResult {
     processingTimeMs: number;
     engineVersion: string;
     contourUsed?: boolean;
+    circumferenceSource?: string;
+    missingRequiredAngles?: string[];
+    calibrationConfidence?: number;
     rotationCorrected?: boolean;
     anchorApplied?: boolean;
     crossValidated?: boolean;
@@ -386,6 +392,7 @@ class MeasurementEngine {
     const sideMeasurements = rotationCorrectedSide
       ? this.calculateSideViewMeasurements(rotationCorrectedSide, scaleFactor)
       : null;
+    const missingRequiredAngles = sideMeasurements ? [] : ['side'];
 
     if (__DEV__ && sideMeasurements) {
       console.log('[MeasEngine] sideMeasurements:', JSON.stringify(sideMeasurements));
@@ -396,11 +403,11 @@ class MeasurementEngine {
     const circumferences = this.calculateCircumferences(
       frontMeasurements,
       sideMeasurements,
-      gender,
       warnings,
       scaleFactor,
       contourData
     );
+    const circumferenceSource = this.getCircumferenceSource(sideMeasurements, contourData);
 
     // Step 6: Combine all measurements
     const rawMeasurements: Record<string, number> = {
@@ -448,19 +455,26 @@ class MeasurementEngine {
       : (knownHeight && knownHeight > 0 ? knownHeight : 170);
     if (zeroCount >= 5) {
       if (__DEV__) console.warn('[MeasEngine] Too many zero values, applying anthropometric fallback');
-      warnings.push('Measurements could not be fully calculated from poses. Using body-proportion estimates.');
+      warnings.push(sideMeasurements
+        ? 'Measurements could not be fully calculated from poses. Using body-proportion fallback for missing values.'
+        : 'Circumference measurements withheld until side view is captured; using fallback only for missing linear values.'
+      );
       const ratios = this.getActiveRatios(gender);
       if (sanitizedRaw.height <= 0) sanitizedRaw.height = this.round(referenceHeight);
       if (sanitizedRaw.shoulders <= 0) sanitizedRaw.shoulders = this.round(referenceHeight * ratios.shoulderToHeight);
       if (sanitizedRaw.sleeve <= 0) sanitizedRaw.sleeve = this.round(referenceHeight * ratios.sleeveToHeight);
       if (sanitizedRaw.inseam <= 0) sanitizedRaw.inseam = this.round(referenceHeight * ratios.inseamToHeight);
-      if (sanitizedRaw.chest <= 0) sanitizedRaw.chest = this.round(referenceHeight * ratios.chestToHeight);
-      if (sanitizedRaw.underbust <= 0) sanitizedRaw.underbust = this.round(referenceHeight * ratios.underbustToHeight);
-      if (sanitizedRaw.waist <= 0) sanitizedRaw.waist = this.round(referenceHeight * ratios.waistToHeight);
-      if (sanitizedRaw.hips <= 0) sanitizedRaw.hips = this.round(referenceHeight * ratios.hipsToHeight);
-      if (sanitizedRaw.neck <= 0) sanitizedRaw.neck = this.round(referenceHeight * ratios.neckToHeight);
-      if (sanitizedRaw.thigh <= 0) sanitizedRaw.thigh = this.round(referenceHeight * ratios.thighToHeight);
-      if (sanitizedRaw.calf <= 0) sanitizedRaw.calf = this.round(referenceHeight * ratios.calfToHeight);
+      if (sideMeasurements) {
+        if (sanitizedRaw.chest <= 0) sanitizedRaw.chest = this.round(referenceHeight * ratios.chestToHeight);
+        if (sanitizedRaw.underbust <= 0) sanitizedRaw.underbust = this.round(referenceHeight * ratios.underbustToHeight);
+        if (sanitizedRaw.waist <= 0) sanitizedRaw.waist = this.round(referenceHeight * ratios.waistToHeight);
+        if (sanitizedRaw.hips <= 0) sanitizedRaw.hips = this.round(referenceHeight * ratios.hipsToHeight);
+        if (sanitizedRaw.neck <= 0) sanitizedRaw.neck = this.round(referenceHeight * ratios.neckToHeight);
+        if (sanitizedRaw.thigh <= 0) sanitizedRaw.thigh = this.round(referenceHeight * ratios.thighToHeight);
+        if (sanitizedRaw.calf <= 0) sanitizedRaw.calf = this.round(referenceHeight * ratios.calfToHeight);
+      } else {
+        warnings.push('Anthropometric circumference fallback skipped because side view is required for depth.');
+      }
       if ((sanitizedRaw.roundSleeveBicep ?? 0) <= 0) sanitizedRaw.roundSleeveBicep = this.round(referenceHeight * ratios.bicepToHeight);
       if ((sanitizedRaw.roundSleeveElbow ?? 0) <= 0) sanitizedRaw.roundSleeveElbow = this.round(referenceHeight * ratios.elbowToHeight);
       if (gender === 'female') {
@@ -540,6 +554,9 @@ class MeasurementEngine {
         processingTimeMs,
         engineVersion: this.engineVersion,
         contourUsed: !!(contourData?.front || contourData?.side),
+        circumferenceSource,
+        missingRequiredAngles,
+        calibrationConfidence: (calibration as any)?.confidence ?? (calibration as any)?.reference?.confidence,
         rotationCorrected: rotationApplied,
         anchorApplied,
         crossValidated: true,
@@ -591,6 +608,12 @@ class MeasurementEngine {
       const ref = (calibration as any).reference || calibration;
       const calType = ref.type || (calibration as any).type;
       
+      const explicitCmPerPixel = (calibration as any).cmPerPixel || ref.cmPerPixel;
+      if (isFinite(explicitCmPerPixel) && explicitCmPerPixel > 0) {
+        if (__DEV__) console.log('[MeasEngine] scaleFactor from cmPerPixel:', explicitCmPerPixel, 'type:', calType);
+        return explicitCmPerPixel;
+      }
+
       if (calType !== 'known_height') {
         const pw = ref.pixelWidth || (calibration as any).pixelWidth || 0;
         const rw = ref.realWidthCm || (calibration as any).realWidthCm || 0;
@@ -907,12 +930,27 @@ class MeasurementEngine {
   private calculateCircumferences(
     frontMeasurements: ReturnType<typeof this.calculateFrontViewMeasurements>,
     sideMeasurements: ReturnType<typeof this.calculateSideViewMeasurements> | null,
-    gender: 'male' | 'female' | 'other',
     warnings: string[],
     scaleFactor: number,
     contourData?: ContourData
   ): Record<string, number> {
     const frontWidths = frontMeasurements.frontWidths;
+    const emptyCircumferences = (): Record<string, number> => ({
+      chest: 0,
+      underbust: 0,
+      waist: 0,
+      hips: 0,
+      neck: 0,
+      thigh: 0,
+      calf: 0,
+    });
+
+    if (!sideMeasurements) {
+      warnings.push(
+        'Side view is required for circumference measurements because front view has width but no depth.'
+      );
+      return emptyCircumferences();
+    }
 
     // ------------------------------------------------------------------
     // BEST: Contour (silhouette) widths from segmentation
@@ -943,15 +981,12 @@ class MeasurementEngine {
         for (const part of parts) {
           const fw = contourFrontWidths[part];
           const sw = contourSideWidths[part];
-          if (fw && fw > 0 && sw && sw > 0) {
-            result[part] = this.ellipseCircumference(fw / 2, sw / 2);
-          } else if (fw && fw > 0 && sideMeasurements) {
-            // Fall back to skeleton side depth + contour front width
-            const depth = sideMeasurements.sideDepths[part as keyof typeof sideMeasurements.sideDepths];
-            result[part] = this.ellipseCircumference(fw / 2, (depth || fw * 0.7) / 2);
+          const frontWidth = fw || frontWidths[part as keyof typeof frontWidths] || 0;
+          const sideDepth = sw || sideMeasurements.sideDepths[part as keyof typeof sideMeasurements.sideDepths] || 0;
+          if (frontWidth > 0 && sideDepth > 0) {
+            result[part] = this.ellipseCircumference(frontWidth / 2, sideDepth / 2);
           } else {
-            // Fall back to skeleton-only front width
-            result[part] = this.estimateCircumferenceFromWidth(fw || frontWidths[part as keyof typeof frontWidths] || 0);
+            result[part] = 0;
           }
         }
         // Underbust: use skeleton frontWidth (no contour for this level) + chest depth
@@ -979,30 +1014,14 @@ class MeasurementEngine {
 
       // DECENT: front contour only, no side view → estimate depth from width
       // Typical depth/width ratios from anthropometric data
-      const depthRatios = gender === 'male'
-        ? { chest: 0.75, waist: 0.82, hips: 0.72, neck: 0.85, thigh: 0.95, calf: 0.90, underbust: 0.75 }
-        : { chest: 0.68, waist: 0.75, hips: 0.78, neck: 0.80, thigh: 0.92, calf: 0.88, underbust: 0.68 };
-
-      warnings.push(
-        'Side view not provided - using contour front width with estimated depth. ' +
-        'Add side photo to improve circumference accuracy to ±2cm.'
-      );
-
-      const result: Record<string, number> = {};
-      for (const part of ['chest', 'underbust', 'waist', 'hips', 'neck', 'thigh', 'calf'] as const) {
-        const w = part === 'underbust'
-          ? frontWidths.underbust
-          : (contourFrontWidths[part as keyof typeof contourFrontWidths] || frontWidths[part as keyof typeof frontWidths] || 0);
-        const ratio = depthRatios[part] || 0.8;
-        result[part] = this.ellipseCircumference(w / 2, (w * ratio) / 2);
-      }
-      return result;
+      warnings.push('Side contour unavailable; using front contour width with side-view landmark depth.');
+      return emptyCircumferences();
     }
 
     // ------------------------------------------------------------------
     // FALLBACK: Skeleton landmarks only (no contour data available)
     // ------------------------------------------------------------------
-    if (sideMeasurements) {
+    {
       const depths = sideMeasurements.sideDepths;
       return {
         chest: this.ellipseCircumference(frontWidths.chest / 2, depths.chest / 2),
@@ -1018,21 +1037,22 @@ class MeasurementEngine {
     // WORST: No side view, no contour → pure ratio estimation
     warnings.push(
       'Side view not provided - circumferences estimated from front view only. ' +
-      'Add side photo for ±2cm accuracy.'
+      'Add side photo to improve confidence.'
     );
 
-    const ratios = this.getActiveRatios(gender);
-    const height = frontMeasurements.height;
+    return emptyCircumferences();
+  }
 
-    return {
-      chest: this.round(height * ratios.chestToHeight),
-      underbust: this.round(height * ratios.underbustToHeight),
-      waist: this.round(height * ratios.waistToHeight),
-      hips: this.round(height * ratios.hipsToHeight),
-      neck: this.round(height * ratios.neckToHeight),
-      thigh: this.round(height * ratios.thighToHeight),
-      calf: this.round(height * ratios.calfToHeight),
-    };
+  private getCircumferenceSource(
+    sideMeasurements: ReturnType<typeof this.calculateSideViewMeasurements> | null,
+    contourData?: ContourData
+  ): string {
+    const hasFrontContour = !!contourData?.front && contourData.front.segmentationConfidence > 0.4;
+    const hasSideContour = !!contourData?.side && contourData.side.segmentationConfidence > 0.4;
+    if (!sideMeasurements) return 'withheld_missing_side_view';
+    if (hasFrontContour && hasSideContour) return 'front_side_contour_ellipse';
+    if (hasFrontContour) return 'front_contour_side_landmark_ellipse';
+    return 'front_landmark_side_landmark_ellipse';
   }
 
   /**
@@ -1130,7 +1150,6 @@ class MeasurementEngine {
       if (!measured || measured <= 0) continue;
 
       const expectedRatio = ratios[check.ratioKey];
-      const expected = height * expectedRatio;
       const actualRatio = measured / height;
 
       // Calculate z-score (how many standard deviations from mean)
@@ -1141,19 +1160,19 @@ class MeasurementEngine {
         // Extreme outlier (>5σ): measurement is nonsensical — use expected directly
         warnings.push(
           `${check.key} measurement (${measured.toFixed(1)}cm) is wildly off (z=${zScore.toFixed(1)}). ` +
-          `Replacing with expected value.`
+          `Review capture quality or tape-anchor this measurement.`
         );
-        corrected[check.key] = this.round(expected);
       } else if (zScore > 3) {
         // Major outlier (3-5σ): heavy correction toward expected
         warnings.push(
           `${check.key} measurement (${measured.toFixed(1)}cm) is a statistical outlier. ` +
-          `Applying strong correction.`
+          `Keeping measured value and flagging for review.`
         );
-        corrected[check.key] = this.round(measured * 0.15 + expected * 0.85);
       } else if (zScore > 2) {
         // Moderate outlier (2-3σ): moderate correction
-        corrected[check.key] = this.round(measured * 0.6 + expected * 0.4);
+        warnings.push(
+          `${check.key} measurement (${measured.toFixed(1)}cm) is outside typical ratios; keeping measured value.`
+        );
       }
       // Within 2σ: keep measured value (normal variation)
     }
@@ -1227,6 +1246,10 @@ class MeasurementEngine {
     ];
 
     for (const config of measurementConfigs) {
+      if (!(config.key in measurements)) {
+        continue;
+      }
+
       // Start with prior
       let logOdds = Math.log(basePrior / (1 - Math.min(basePrior, 0.99)));
 
@@ -1251,7 +1274,8 @@ class MeasurementEngine {
       const measValue = measurements[config.key];
       if (!isFinite(measValue) || measValue <= 0) {
         // Missing or invalid measurement → low confidence
-        logOdds -= 2.0;
+        confidence[config.key] = 0;
+        continue;
       } else if (config.ratioKey && measValue > 0) {
         const expectedRatio = ratios[config.ratioKey] as number;
         const actualRatio = measurements[config.key] / height;
@@ -1549,6 +1573,106 @@ class MeasurementEngine {
     warnings: string[]
   ): Record<string, number> {
     const m = { ...measurements };
+    return this.applyPlausibilityWarnings(m, gender, warnings);
+  }
+
+  private applyPlausibilityWarnings(
+    measurements: Record<string, number>,
+    gender: 'male' | 'female' | 'other',
+    warnings: string[]
+  ): Record<string, number> {
+    const m = { ...measurements };
+    return this.collectPlausibilityWarnings(m, gender, warnings);
+  }
+
+  private collectPlausibilityWarnings(
+    measurements: Record<string, number>,
+    gender: 'male' | 'female' | 'other',
+    warnings: string[]
+  ): Record<string, number> {
+    const m = measurements;
+    const typicalRanges: Record<string, Record<string, { min: number; max: number }>> = {
+      male: {
+        chest: { min: 88, max: 120 },
+        waist: { min: 72, max: 108 },
+        hips: { min: 88, max: 116 },
+        shoulders: { min: 41, max: 51 },
+        neck: { min: 36, max: 44 },
+        sleeve: { min: 58, max: 68 },
+        inseam: { min: 76, max: 86 },
+        thigh: { min: 54, max: 68 },
+        calf: { min: 35, max: 44 },
+      },
+      female: {
+        chest: { min: 80, max: 116 },
+        underbust: { min: 64, max: 92 },
+        waist: { min: 60, max: 98 },
+        hips: { min: 86, max: 122 },
+        shoulders: { min: 34, max: 44 },
+        neck: { min: 33, max: 39 },
+        sleeve: { min: 57, max: 63 },
+        inseam: { min: 73, max: 83 },
+        thigh: { min: 48, max: 66 },
+        calf: { min: 30, max: 40 },
+      },
+      other: {
+        chest: { min: 80, max: 120 },
+        waist: { min: 60, max: 108 },
+        hips: { min: 86, max: 122 },
+        shoulders: { min: 34, max: 51 },
+        neck: { min: 33, max: 44 },
+        sleeve: { min: 57, max: 68 },
+        inseam: { min: 73, max: 86 },
+        thigh: { min: 48, max: 68 },
+        calf: { min: 30, max: 44 },
+      },
+    };
+
+    const activeTypicalRanges = typicalRanges[gender] || typicalRanges.other;
+    for (const [key, bounds] of Object.entries(activeTypicalRanges)) {
+      const value = m[key];
+      if (!value || value <= 0) continue;
+      const min = bounds.min * 0.9;
+      const max = bounds.max * 1.1;
+      if (value > max) {
+        warnings.push(`${key} (${this.round(value)}cm) exceeds typical range ${max.toFixed(0)}cm; keeping measured value.`);
+      } else if (value < min) {
+        warnings.push(`${key} (${this.round(value)}cm) is below typical range ${min.toFixed(0)}cm; keeping measured value.`);
+      }
+    }
+
+    if (m.hips > 0 && m.waist > 0 && m.waist > m.hips * 1.15) {
+      warnings.push('Waist exceeds hips by more than 15%; keeping measured values and flagging for review.');
+    }
+    if (m.chest > 0 && m.neck > 0 && m.neck > m.chest * 0.6) {
+      warnings.push('Neck circumference is close to chest; keeping measured value and flagging for review.');
+    }
+    if (m.thigh > 0 && m.hips > 0 && m.thigh > m.hips * 0.75) {
+      warnings.push('Thigh circumference is high relative to hips; keeping measured value and flagging for review.');
+    }
+    if (m.calf > 0 && m.thigh > 0 && m.calf > m.thigh) {
+      warnings.push('Calf circumference exceeds thigh; keeping measured value and flagging for review.');
+    }
+    if (m.shoulders > 0 && m.height > 0) {
+      const ratios = this.getActiveRatios(gender);
+      const expectedShoulder = m.height * ratios.shoulderToHeight;
+      if (m.shoulders > expectedShoulder * 1.35 || m.shoulders < expectedShoulder * 0.7) {
+        warnings.push('Shoulder width is outside typical ratios; keeping measured value.');
+      }
+    }
+    if (m.sleeve > 0 && m.height > 0) {
+      const sleeveRatio = m.sleeve / m.height;
+      if (sleeveRatio > 0.45 || sleeveRatio < 0.25) {
+        warnings.push('Sleeve length is outside typical height ratios; keeping measured value.');
+      }
+    }
+    if (m.inseam > 0 && m.height > 0) {
+      const inseamRatio = m.inseam / m.height;
+      if (inseamRatio > 0.55 || inseamRatio < 0.35) {
+        warnings.push('Inseam is outside typical height ratios; keeping measured value.');
+      }
+    }
+    return m;
 
     // ── ISO 8559-1 absolute ranges (XS–XXL) ──
     const isoRanges: Record<string, Record<string, { min: number; max: number }>> = {
@@ -1591,44 +1715,36 @@ class MeasurementEngine {
       },
     };
 
-    // Apply absolute ISO range hard-clamping — with 10% tolerance margin for outlier body types
+    // Legacy absolute-range notes; runtime validation above is warning-only.
     const ranges = isoRanges[gender] || isoRanges.other;
     for (const [key, bounds] of Object.entries(ranges)) {
       if (m[key] > 0) {
         const marginMin = bounds.min * 0.90; // 10% below XS
         const marginMax = bounds.max * 1.10; // 10% above XXL
         if (m[key] > marginMax) {
-          warnings.push(`${key} (${this.round(m[key])}cm) exceeds ISO max ${marginMax.toFixed(0)}cm — hard-clamping.`);
-          m[key] = this.round(marginMax);
+          warnings.push(`${key} (${this.round(m[key])}cm) exceeds ISO max ${marginMax.toFixed(0)}cm; keeping measured value.`);
         } else if (m[key] < marginMin) {
-          warnings.push(`${key} (${this.round(m[key])}cm) below ISO min ${marginMin.toFixed(0)}cm — hard-clamping.`);
-          m[key] = this.round(marginMin);
+          warnings.push(`${key} (${this.round(m[key])}cm) below ISO min ${marginMin.toFixed(0)}cm; keeping measured value.`);
         }
       }
     }
 
     // Rule 1: Hips should generally be >= waist (in most body types)
     if (m.hips > 0 && m.waist > 0 && m.waist > m.hips * 1.15) {
-      warnings.push('Waist exceeds hips by >15% — adjusting for consistency.');
-      const avg = (m.waist + m.hips) / 2;
-      m.waist = this.round(avg * 0.98);
-      m.hips = this.round(avg * 1.02);
+      warnings.push('Waist exceeds hips by >15%; keeping measured values and flagging for review.');
     }
 
     // Rule 2: Chest should be > neck
     if (m.chest > 0 && m.neck > 0 && m.neck > m.chest * 0.6) {
-      warnings.push('Neck circumference too close to chest — correcting.');
-      m.neck = this.round(m.chest * 0.42);
+      warnings.push('Neck circumference too close to chest; keeping measured value and flagging for review.');
     }
 
     // Rule 3: Thigh should be < hips
     if (m.thigh > 0 && m.hips > 0 && m.thigh > m.hips * 0.75) {
-      m.thigh = this.round(m.hips * 0.6);
     }
 
     // Rule 4: Calf should be < thigh
     if (m.calf > 0 && m.thigh > 0 && m.calf > m.thigh) {
-      m.calf = this.round(m.thigh * 0.65);
     }
 
     // Rule 5: Shoulder width should be reasonable relative to height
@@ -1636,10 +1752,7 @@ class MeasurementEngine {
       const ratios = this.getActiveRatios(gender);
       const expectedShoulder = m.height * ratios.shoulderToHeight;
       if (m.shoulders > expectedShoulder * 1.35 || m.shoulders < expectedShoulder * 0.7) {
-        warnings.push('Shoulder width outside expected range — adjusting.');
-        m.shoulders = this.round(
-          m.shoulders * 0.5 + expectedShoulder * 0.5
-        );
+        warnings.push('Shoulder width outside expected range; keeping measured value.');
       }
     }
 
@@ -1647,9 +1760,6 @@ class MeasurementEngine {
     if (m.sleeve > 0 && m.height > 0) {
       const sleeveRatio = m.sleeve / m.height;
       if (sleeveRatio > 0.45 || sleeveRatio < 0.25) {
-        const ratios = this.getActiveRatios(gender);
-        const expected = m.height * ratios.sleeveToHeight;
-        m.sleeve = this.round(m.sleeve * 0.7 + expected * 0.3);
       }
     }
 
@@ -1657,9 +1767,6 @@ class MeasurementEngine {
     if (m.inseam > 0 && m.height > 0) {
       const inseamRatio = m.inseam / m.height;
       if (inseamRatio > 0.55 || inseamRatio < 0.35) {
-        const ratios = this.getActiveRatios(gender);
-        const expected = m.height * ratios.inseamToHeight;
-        m.inseam = this.round(m.inseam * 0.7 + expected * 0.3);
       }
     }
 
@@ -1709,7 +1816,7 @@ class MeasurementEngine {
       capabilities: [
         'multi_angle_measurement',
         'reference_calibration',
-        'anthropometric_correction',
+        'anthropometric_plausibility_warnings',
         'personalized_ratios',
         'ellipse_circumference',
         'outlier_detection',
@@ -1725,10 +1832,10 @@ class MeasurementEngine {
       supportedAngles: ['front', 'side', 'back'],
       supportedCalibration: ['credit_card', 'a4_paper', 'known_height', 'ruler', 'aruco_marker'],
       accuracyTargets: {
-        withContourAndMultiAngle: '±1-2cm',
-        withCalibrationAndMultiAngle: '±2-3cm',
-        withCalibrationFrontOnly: '±3-5cm',
-        withoutCalibration: '±4-7cm',
+        withContourAndMultiAngle: 'highest confidence; validation required',
+        withCalibrationAndMultiAngle: 'high confidence; validation required',
+        withCalibrationFrontOnly: 'moderate confidence; validation required',
+        withoutCalibration: 'estimate only; validation required',
       },
     };
   }

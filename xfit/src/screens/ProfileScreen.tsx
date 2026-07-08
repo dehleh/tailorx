@@ -181,7 +181,7 @@ export default function ProfileScreen({ navigation }: any) {
           <View style={{ flex: 1 }}>
             <Text style={styles.completeBannerTitle}>Complete Your Profile</Text>
             <Text style={styles.completeBannerText}>
-              Add your height and gender for more accurate measurements (±1-2cm vs ±5cm)
+              Add your height and fit profile to improve scan confidence.
             </Text>
           </View>
           <Text style={styles.menuArrow}>›</Text>
@@ -325,7 +325,7 @@ export default function ProfileScreen({ navigation }: any) {
             </View>
 
             {/* Height */}
-            <Text style={styles.fieldLabel}>Height (cm) — critical for accuracy</Text>
+            <Text style={styles.fieldLabel}>Height (cm) - important for calibration</Text>
             <TextInput
               style={styles.textInput}
               value={editHeight}
@@ -334,7 +334,7 @@ export default function ProfileScreen({ navigation }: any) {
               keyboardType="numeric"
             />
             <Text style={styles.fieldHint}>
-              Your height is the primary calibration reference. Without it, measurement error is ±5cm instead of ±1-2cm.
+              Your height is the primary calibration reference and helps the engine convert pixels into centimeters.
             </Text>
 
             {/* Weight */}

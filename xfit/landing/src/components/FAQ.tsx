@@ -4,23 +4,23 @@ import { useState } from 'react';
 const ITEMS = [
   {
     q: 'How accurate are the measurements really?',
-    a: 'Our pipeline targets ±1.2 cm on key circumferences (chest, waist, hip) when calibration and lighting guidance are followed. Accuracy improves further with multi-pose capture, which is the default.',
+    a: 'Pilot scans return confidence-scored estimates. We benchmark each pilot against tape measurements and report mean absolute error by body part before making accuracy claims.',
   },
   {
     q: 'Do customers need to install an app?',
-    a: 'No. They can scan from a branded mobile web link. We also offer a native iOS / Android SDK for embedded experiences.',
+    a: 'Current pilots use the Tailor-X mobile app and branded invite flow. Mobile web and embedded SDK options are roadmap items for selected partners.',
   },
   {
     q: 'How is privacy handled?',
-    a: 'Frames are processed in-memory and discarded. Only derived measurements persist. Consent is captured upfront and end users can request deletion at any time.',
+    a: 'Consent is captured upfront. Scan photos may be processed locally or by Tailor-X cloud processors, derived measurements persist, and retention/deletion rules are documented per pilot.',
   },
   {
     q: 'Can I plug it into my existing storefront?',
-    a: 'Yes — Shopify, WooCommerce, Magento, and headless storefronts are supported through our REST API and webhooks.',
+    a: 'The REST backend is available for pilot integrations. Shopify, WooCommerce, Magento, and webhook packages are planned based on pilot requirements.',
   },
   {
     q: 'What does the pilot include?',
-    a: 'A free branded portal, your size charts integrated, a workshop with our team, and 30 days of unlimited scans to evaluate fit accuracy on your real customers.',
+    a: 'A branded portal, trial scan quota, size-chart mapping, a workshop with our team, and an accuracy benchmark against your real customer measurements.',
   },
 ];
 

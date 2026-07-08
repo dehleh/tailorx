@@ -2,11 +2,10 @@
  * Reference Calibration Service
  * 
  * Uses a known-size reference object (credit card, A4 paper, etc.)
- * to establish accurate pixel-to-cm scale.
+ * to improve pixel-to-cm scale estimation.
  * 
- * This is the single biggest accuracy improvement for body measurement.
- * Without calibration: ±3-6cm error
- * With calibration:    ±1-2cm error
+ * This is the single biggest confidence improvement for body measurement.
+ * Exact error ranges must come from a tape-measure validation study.
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
@@ -19,6 +18,7 @@ import { REFERENCE_SIZES, CalibrationReference } from './measurementEngine';
 export interface CalibrationResult {
   reference: CalibrationReference;
   pixelsPerCm: number;
+  cmPerPixel: number;
   confidence: number;
   distanceEstimateCm: number; // Estimated distance from camera
 }
@@ -82,8 +82,11 @@ class ReferenceCalibrationService {
         pixelHeight: detectedHeightPixels,
         realWidthCm: realSize.width,
         realHeightCm: realSize.height,
+        cmPerPixel: pixelsPerCm > 0 ? 1 / pixelsPerCm : 0,
+        confidence: Math.max(0.5, Math.min(1, confidence)),
       },
       pixelsPerCm,
+      cmPerPixel: pixelsPerCm > 0 ? 1 / pixelsPerCm : 0,
       confidence: Math.max(0.5, Math.min(1, confidence)),
       distanceEstimateCm,
     };
@@ -98,6 +101,7 @@ class ReferenceCalibrationService {
     detectedHeightPixels: number
   ): CalibrationResult {
     const pixelsPerCm = detectedHeightPixels / knownHeightCm;
+    const cmPerPixel = detectedHeightPixels > 0 ? knownHeightCm / detectedHeightPixels : 0;
 
     return {
       reference: {
@@ -106,8 +110,11 @@ class ReferenceCalibrationService {
         pixelHeight: detectedHeightPixels,
         realWidthCm: 0,
         realHeightCm: knownHeightCm,
+        cmPerPixel,
+        confidence: 0.85,
       },
       pixelsPerCm,
+      cmPerPixel,
       confidence: 0.85, // Height-only calibration is less accurate than reference object
       distanceEstimateCm: 0,
     };
@@ -127,7 +134,7 @@ class ReferenceCalibrationService {
         isConsistent: true,
         avgPixelsPerCm: readings[0]?.pixelsPerCm ?? 0,
         stdDev: 0,
-        recommendation: 'Take at least 2 calibration readings for best accuracy',
+        recommendation: 'Take at least 2 calibration readings for best confidence',
       };
     }
 
@@ -181,7 +188,7 @@ class ReferenceCalibrationService {
         ],
         tips: [
           'A4 is the most common printer paper size (21cm × 29.7cm)',
-          'Larger reference = better accuracy',
+          'Larger reference = better confidence',
           'Use a clipboard to keep paper flat',
         ],
         badExamples: [

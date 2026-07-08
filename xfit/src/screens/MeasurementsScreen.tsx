@@ -109,7 +109,7 @@ export default function MeasurementsScreen({ navigation }: any) {
                 </Text>
                 <Text style={styles.historyInfo}>
                   {m.accuracy?.anglesUsed?.length || '?'} angle(s)
-                  {accuracy ? ` • ${accuracy}% accuracy` : ''}
+                  {accuracy ? ` - ${accuracy}% confidence` : ''}
                 </Text>
               </View>
               <View style={styles.historyRight}>
@@ -211,7 +211,7 @@ export default function MeasurementsScreen({ navigation }: any) {
     const lines = [
       'Tailor-X Body Measurements',
       `Date: ${lastScanDate.toLocaleDateString()}`,
-      accuracy ? `Accuracy: ${accuracy.overallScore}%` : '',
+      accuracy ? `Scan confidence: ${accuracy.overallScore}%` : '',
       '',
       ...measurementList.map(m =>
         m.isWeight
@@ -239,7 +239,7 @@ export default function MeasurementsScreen({ navigation }: any) {
         </Text>
       </View>
 
-      {/* Accuracy banner */}
+      {/* Scan confidence banner */}
       {accuracy && (
         <View style={[
           styles.accuracyBanner,
@@ -250,7 +250,7 @@ export default function MeasurementsScreen({ navigation }: any) {
         ]}>
           <Text style={styles.accuracyBannerText}>
             {accuracy.overallScore >= 85 ? '🎯' : accuracy.overallScore >= 70 ? '👍' : accuracy.overallScore >= 55 ? '📐' : '🔬'}{' '}
-            {accuracy.overallScore}% accuracy — {accuracy.anglesUsed.length} angle(s)
+            {accuracy.overallScore}% scan confidence - {accuracy.anglesUsed.length} angle(s)
           </Text>
           {accuracy.warnings.length > 0 && (
             <Text style={styles.accuracyWarning}>

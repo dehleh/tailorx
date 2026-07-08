@@ -3,18 +3,20 @@ import * as SecureStore from 'expo-secure-store';
 
 /**
  * Local Storage Service
- * Handles all local data persistence using AsyncStorage.
- * Sensitive items (auth token) go through expo-secure-store, which uses
- * the iOS Keychain / Android Keystore instead of plain-text AsyncStorage.
+ * Handles local persistence. Sensitive profile, auth, and measurement data
+ * goes through expo-secure-store instead of plain-text AsyncStorage.
  */
 
 class StorageService {
+  private readonly SECURE_CHUNK_SIZE = 1800;
+
   // Storage keys
   private readonly KEYS = {
     MEASUREMENTS: '@tailorx:measurements',
     USER: '@tailorx:user',
     SETTINGS: '@tailorx:settings',
     CACHE: '@tailorx:cache',
+    AUTH: '@tailorx:auth',
     AUTH_TOKEN: '@tailorx:auth_token',
   };
 
@@ -45,6 +47,88 @@ class StorageService {
   }
 
   /**
+   * Save sensitive JSON through SecureStore. Values are chunked because
+   * measurement history can grow beyond common secure-store single-value limits.
+   */
+  async saveSensitive<T>(key: string, data: T): Promise<void> {
+    try {
+      const jsonData = JSON.stringify(data);
+      await this.clearSecureChunks(key);
+
+      if (jsonData.length <= this.SECURE_CHUNK_SIZE) {
+        await SecureStore.setItemAsync(key, jsonData);
+        await AsyncStorage.removeItem(key);
+        return;
+      }
+
+      const chunkCount = Math.ceil(jsonData.length / this.SECURE_CHUNK_SIZE);
+      for (let i = 0; i < chunkCount; i++) {
+        await SecureStore.setItemAsync(
+          this.secureChunkKey(key, i),
+          jsonData.slice(i * this.SECURE_CHUNK_SIZE, (i + 1) * this.SECURE_CHUNK_SIZE)
+        );
+      }
+      await SecureStore.setItemAsync(this.secureChunkCountKey(key), String(chunkCount));
+      await SecureStore.deleteItemAsync(key);
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.error(`Failed to save sensitive data for key ${key}:`, error);
+      throw new Error('Sensitive storage save failed');
+    }
+  }
+
+  /**
+   * Load sensitive JSON from SecureStore, with one-time migration from the
+   * previous AsyncStorage location if needed.
+   */
+  async loadSensitive<T>(key: string): Promise<T | null> {
+    try {
+      const chunkCountRaw = await SecureStore.getItemAsync(this.secureChunkCountKey(key));
+      if (chunkCountRaw) {
+        const chunkCount = Number(chunkCountRaw);
+        const chunks: string[] = [];
+        for (let i = 0; i < chunkCount; i++) {
+          const chunk = await SecureStore.getItemAsync(this.secureChunkKey(key, i));
+          if (chunk == null) return null;
+          chunks.push(chunk);
+        }
+        return JSON.parse(chunks.join(''));
+      }
+
+      const directValue = await SecureStore.getItemAsync(key);
+      if (directValue) {
+        return JSON.parse(directValue);
+      }
+
+      const legacyValue = await AsyncStorage.getItem(key);
+      if (legacyValue) {
+        const parsed = JSON.parse(legacyValue) as T;
+        await this.saveSensitive(key, parsed);
+        return parsed;
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Failed to load sensitive data for key ${key}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Remove sensitive JSON from SecureStore and the legacy AsyncStorage key.
+   */
+  async removeSensitive(key: string): Promise<void> {
+    try {
+      await this.clearSecureChunks(key);
+      await SecureStore.deleteItemAsync(key);
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.error(`Failed to remove sensitive data for key ${key}:`, error);
+      throw new Error('Sensitive storage remove failed');
+    }
+  }
+
+  /**
    * Remove data from storage
    */
   async remove(key: string): Promise<void> {
@@ -61,10 +145,35 @@ class StorageService {
    */
   async clearAll(): Promise<void> {
     try {
+      await Promise.all([
+        this.removeSensitive(this.KEYS.MEASUREMENTS),
+        this.removeSensitive(this.KEYS.USER),
+        this.removeSensitive(this.KEYS.AUTH),
+        this.removeSensitive(this.KEYS.AUTH_TOKEN),
+      ]);
       await AsyncStorage.clear();
     } catch (error) {
       console.error('Failed to clear storage:', error);
       throw new Error('Storage clear failed');
+    }
+  }
+
+  private secureChunkKey(key: string, index: number): string {
+    return `${key}:secure_chunk:${index}`;
+  }
+
+  private secureChunkCountKey(key: string): string {
+    return `${key}:secure_chunk_count`;
+  }
+
+  private async clearSecureChunks(key: string): Promise<void> {
+    const countRaw = await SecureStore.getItemAsync(this.secureChunkCountKey(key));
+    if (countRaw) {
+      const count = Number(countRaw);
+      for (let i = 0; i < count; i++) {
+        await SecureStore.deleteItemAsync(this.secureChunkKey(key, i));
+      }
+      await SecureStore.deleteItemAsync(this.secureChunkCountKey(key));
     }
   }
 

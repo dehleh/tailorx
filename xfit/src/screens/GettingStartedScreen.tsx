@@ -11,7 +11,7 @@ const slides = [
   {
     icon: '👕',
     title: 'Wear fitted clothing',
-    description: 'Wear close-fitting clothes or form-fitting undergarments for the most accurate measurements.',
+    description: 'Wear close-fitting clothes or form-fitting undergarments for the clearest scan.',
     color: '#E0F7F5',
   },
   {

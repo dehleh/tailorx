@@ -80,7 +80,7 @@ export default function HomeScreen({ navigation }: any) {
             {latestMeasurements.map((m) => (
               <View key={m.id} style={styles.measurementChip}>
                 <Text style={styles.chipAccuracy}>
-                  {m.accuracy?.overallScore ? `${Math.round(m.accuracy.overallScore)}% accurate` : 'Scan'}
+                  {m.accuracy?.overallScore ? `${Math.round(m.accuracy.overallScore)}% confidence` : 'Scan'}
                 </Text>
                 <Text style={styles.chipDate}>{timeAgo(m.date)}</Text>
                 <View style={styles.chipRow}>

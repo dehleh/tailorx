@@ -9,28 +9,28 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://tailorxfit.com';
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Tailor-X — Body measurements that fit, in seconds',
+    default: 'Tailor-X - Guided body measurements for fit pilots',
     template: '%s · Tailor-X',
   },
   description:
-    'AI-powered body measurement for fashion brands, tailors, and fitness studios. Reduce returns, raise conversion, and delight customers — straight from a phone camera.',
+    'AI-assisted body measurement pilots for fashion brands, tailors, and fitness studios using phone capture, scan confidence, and controlled validation.',
   keywords: [
     'body measurement', 'AI tailoring', 'sizing', 'fashion tech',
     'fit technology', 'returns reduction', 'made-to-measure', 'pose estimation',
   ],
   openGraph: {
     type: 'website',
-    title: 'Tailor-X — Body measurements that fit, in seconds',
+    title: 'Tailor-X - Guided body measurements for fit pilots',
     description:
-      'AI-powered body measurement for fashion brands, tailors, and fitness studios.',
+      'AI-assisted body measurement pilots for fashion brands, tailors, and fitness studios.',
     url: SITE_URL,
     siteName: 'Tailor-X',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Tailor-X — Body measurements that fit, in seconds',
+    title: 'Tailor-X - Guided body measurements for fit pilots',
     description:
-      'AI-powered body measurement for fashion brands, tailors, and fitness studios.',
+      'AI-assisted body measurement pilots for fashion brands, tailors, and fitness studios.',
   },
 };
 

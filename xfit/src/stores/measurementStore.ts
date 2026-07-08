@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BodyMeasurement } from '../types/measurements';
+import { storageService } from '../services/storageService';
 
 interface MeasurementStore {
   measurements: BodyMeasurement[];
@@ -29,7 +29,7 @@ export const useMeasurementStore = create<MeasurementStore>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       const measurements = [...get().measurements, measurement];
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(measurements));
+      await storageService.saveSensitive(STORAGE_KEY, measurements);
       set({ measurements, currentMeasurement: measurement, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to save measurement', isLoading: false });
@@ -42,7 +42,7 @@ export const useMeasurementStore = create<MeasurementStore>((set, get) => ({
       const measurements = get().measurements.map((m) =>
         m.id === id ? { ...m, ...updatedData } : m
       );
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(measurements));
+      await storageService.saveSensitive(STORAGE_KEY, measurements);
       set({ measurements, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to update measurement', isLoading: false });
@@ -53,7 +53,7 @@ export const useMeasurementStore = create<MeasurementStore>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       const measurements = get().measurements.filter((m) => m.id !== id);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(measurements));
+      await storageService.saveSensitive(STORAGE_KEY, measurements);
       set({ measurements, isLoading: false });
     } catch (error) {
       set({ error: 'Failed to delete measurement', isLoading: false });
@@ -63,9 +63,8 @@ export const useMeasurementStore = create<MeasurementStore>((set, get) => ({
   loadMeasurements: async () => {
     try {
       set({ isLoading: true, error: null });
-      const data = await AsyncStorage.getItem(STORAGE_KEY);
-      const measurements = data ? JSON.parse(data) : [];
-      set({ measurements, isLoading: false });
+      const measurements = await storageService.loadSensitive<BodyMeasurement[]>(STORAGE_KEY);
+      set({ measurements: measurements || [], isLoading: false });
     } catch (error) {
       set({ error: 'Failed to load measurements', isLoading: false });
     }

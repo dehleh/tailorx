@@ -1,14 +1,14 @@
 const FEATURES = [
   {
-    title: 'Studio-grade accuracy',
-    body: 'Multi-pose capture, real-time pose feedback, and reference-object calibration converge measurements to within ±1.2 cm.',
+    title: 'Benchmark-led confidence',
+    body: 'Multi-pose capture, pose feedback, and calibration produce confidence-scored estimates while pilot benchmarks quantify real-world error.',
     icon: (
       <path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z" />
     ),
   },
   {
     title: 'Built for any phone',
-    body: 'No depth sensor or LiDAR required. Works on iOS and Android with a clean computer-vision pipeline tuned for low-light environments.',
+    body: 'No depth sensor or LiDAR required. Built for iOS and Android pilots with image-quality checks for lighting, framing, and blur.',
     icon: (
       <>
         <rect x="6" y="2" width="12" height="20" rx="3" />
@@ -18,7 +18,7 @@ const FEATURES = [
   },
   {
     title: 'Multi-tenant from day one',
-    body: 'Each brand gets a branded portal, staff invites, customer sessions, and quota-aware billing — without writing a line of code.',
+    body: 'Each pilot brand gets a branded portal, staff invites, customer sessions, trial quota, and Paystack billing activation.',
     icon: (
       <>
         <path d="M3 21V5a2 2 0 0 1 2-2h6v18" />
@@ -28,7 +28,7 @@ const FEATURES = [
   },
   {
     title: 'Privacy by default',
-    body: 'Frames are processed and discarded; only derived measurements persist. Consent flows are built in. GDPR-ready.',
+    body: 'Consent is captured upfront, share links are read-only and expiring, and image retention is documented for pilot deployments.',
     icon: (
       <>
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -37,7 +37,7 @@ const FEATURES = [
   },
   {
     title: 'Size-chart aware',
-    body: 'Your size charts plug straight in. Recommendations follow your fit philosophy — slim, regular, or relaxed.',
+    body: 'Pilot size charts can be mapped into recommendations, then tuned against fit feedback before broader rollout.',
     icon: (
       <>
         <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -47,8 +47,8 @@ const FEATURES = [
     ),
   },
   {
-    title: 'API + webhooks',
-    body: 'Stream measurements into your PIM, ERP, or storefront. Paystack billing, signed webhooks, and a clean REST surface.',
+    title: 'API foundation',
+    body: 'A REST backend supports scans, invites, billing, and share links today, with storefront and webhook integrations planned through pilots.',
     icon: (
       <>
         <polyline points="16 18 22 12 16 6" />
@@ -65,11 +65,11 @@ export default function Features() {
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs uppercase tracking-widest text-accentDark">Platform</p>
           <h2 className="mt-3 font-display text-3xl font-bold text-ink md:text-5xl">
-            One platform for accurate fit, end-to-end.
+            One platform for measurable fit workflows.
           </h2>
           <p className="mt-4 text-slate1">
-            From scan capture to size recommendation to billing — Tailor-X
-            replaces a stack of fragile tools with a single, opinionated system.
+            From scan capture to size recommendation to billing, Tailor-X gives
+            pilot teams one place to test and improve fit workflows.
           </p>
         </div>
         <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">

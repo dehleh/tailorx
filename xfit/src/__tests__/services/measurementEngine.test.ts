@@ -128,12 +128,15 @@ describe('MeasurementEngine', () => {
       expect(result.measurements.height).toBeGreaterThan(150);
       expect(result.measurements.height).toBeLessThan(200);
 
-      // Shoulders should be reasonable (40-55cm for adult male)
-      expect(result.measurements.shoulders).toBeGreaterThan(35);
+      // Shoulders should be a positive linear measurement; plausibility warnings are separate.
+      expect(result.measurements.shoulders).toBeGreaterThan(25);
       expect(result.measurements.shoulders).toBeLessThan(60);
 
       // Should have confidence scores for all measurements
       expect(Object.keys(result.confidence).length).toBeGreaterThan(0);
+      expect(result.measurements.chest).toBe(0);
+      expect(result.confidence.chest).toBe(0);
+      expect(result.metadata.missingRequiredAngles).toContain('side');
 
       // Should have metadata
       expect(result.metadata.engineVersion).toBeTruthy();
@@ -200,7 +203,7 @@ describe('MeasurementEngine', () => {
       }).toThrow('Front-view capture is required');
     });
 
-    it('should apply anthropometric corrections for outlier measurements', () => {
+    it('should warn but preserve anthropometric outlier measurements', () => {
       // Create landmarks with exaggerated proportions
       const weirdCapture: CaptureAngle = {
         ...createFrontCapture(),
@@ -222,11 +225,11 @@ describe('MeasurementEngine', () => {
       // Shoulders should be corrected toward reasonable range
       // The engine pulls outliers toward the expected mean (40% measured + 60% expected for >3σ)
       // With extreme landmarks (0.1-0.9), raw would be very wide, so correction should pull it down
-      expect(result.measurements.shoulders).toBeLessThan(80); // Should not be raw extreme
-      expect(result.measurements.shoulders).toBeGreaterThan(30); // Should not be absurdly small
+      expect(result.measurements.shoulders).toBeGreaterThan(80);
 
       // Should have warning about correction
       expect(result.warnings.length).toBeGreaterThan(0);
+      expect(result.warnings.some(w => w.toLowerCase().includes('keeping measured value'))).toBe(true);
     });
   });
 
@@ -253,7 +256,7 @@ describe('MeasurementEngine', () => {
 
       expect(info.version).toBeTruthy();
       expect(info.capabilities).toContain('multi_angle_measurement');
-      expect(info.capabilities).toContain('anthropometric_correction');
+      expect(info.capabilities).toContain('anthropometric_plausibility_warnings');
       expect(info.supportedAngles).toContain('front');
       expect(info.supportedAngles).toContain('side');
     });

@@ -6,7 +6,7 @@ import { useEnterpriseStore } from '../stores/enterpriseStore';
 
 /**
  * Custom hook to initialize app data on startup.
- * Loads persisted auth, user profile and measurements from AsyncStorage.
+ * Loads persisted auth, user profile and measurements from secure storage.
  */
 export const useAppInitialization = () => {
   const loadMeasurements = useMeasurementStore((state) => state.loadMeasurements);

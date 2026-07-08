@@ -17,8 +17,11 @@ describe('ReferenceCalibrationService', () => {
       );
 
       expect(result.pixelsPerCm).toBeCloseTo(20, 0);
+      expect(result.cmPerPixel).toBeCloseTo(0.05, 3);
       expect(result.confidence).toBeGreaterThan(0.9);
       expect(result.reference.type).toBe('credit_card');
+      expect(result.reference.cmPerPixel).toBeCloseTo(0.05, 3);
+      expect(result.reference.confidence).toBeGreaterThan(0.9);
       expect(result.reference.realWidthCm).toBe(REFERENCE_SIZES.credit_card.width);
       expect(result.reference.realHeightCm).toBe(REFERENCE_SIZES.credit_card.height);
     });
@@ -81,8 +84,10 @@ describe('ReferenceCalibrationService', () => {
       );
 
       expect(result.pixelsPerCm).toBeCloseTo(5, 1);
+      expect(result.cmPerPixel).toBeCloseTo(0.2, 1);
       expect(result.confidence).toBe(0.85);
       expect(result.reference.type).toBe('known_height');
+      expect(result.reference.cmPerPixel).toBeCloseTo(0.2, 1);
       expect(result.reference.realHeightCm).toBe(175);
     });
   });
@@ -151,13 +156,20 @@ describe('ReferenceCalibrationService', () => {
 
   describe('detectReferenceObject', () => {
     it('should return not detected (placeholder)', async () => {
-      const result = await referenceCalibrationService.detectReferenceObject(
-        'file:///test/image.jpg'
-      );
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const result = await referenceCalibrationService.detectReferenceObject(
+          'file:///test/image.jpg'
+        );
 
-      expect(result.detected).toBe(false);
-      expect(result.type).toBeNull();
-      expect(result.bounds).toBeNull();
+        expect(result.detected).toBe(false);
+        expect(result.type).toBeNull();
+        expect(result.bounds).toBeNull();
+      } finally {
+        fetchSpy.mockRestore();
+        warnSpy.mockRestore();
+      }
     });
   });
 });

@@ -4,12 +4,11 @@
  * Processes images to extract 33 BlazePose body landmarks.
  * 
  * Processing pipeline (in priority order):
- * 1. Cloud MediaPipe server  — Most accurate (±1cm). Runs full MediaPipe Pose
+ * 1. Cloud MediaPipe server  - highest-confidence mode. Runs full MediaPipe Pose
  *    Landmarker on a FastAPI server you deploy. See /server/README.md.
- * 2. On-device MediaPipe     — Good accuracy (±2cm). Uses
- *    @gymbrosinc/react-native-mediapipe-pose for native processing.
- * 3. Anthropometric fallback  — Estimation only (±4-5cm). Statistical body
- *    proportions when both real detectors are unavailable.
+ * 2. On-device MediaPipe     - device-local landmark detection when available.
+ * 3. Anthropometric fallback - estimation only. Statistical body proportions
+ *    when both real detectors are unavailable.
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
@@ -95,7 +94,7 @@ class PoseProcessor {
       this.isCloudAvailable = null;
     }
 
-    // Try cloud processing first (most accurate)
+    // Try cloud processing first (highest-confidence mode)
     if (this.isCloudAvailable !== false) {
       try {
         console.log('[PoseProcessor] Attempting cloud processing at:', this.cloudConfig.apiUrl);
@@ -129,7 +128,7 @@ class PoseProcessor {
     }
 
     // Last resort: return estimated landmarks from image dimensions
-    console.warn('[PoseProcessor] ⚠️ Using FALLBACK estimation — measurements will be inaccurate!');
+    console.warn('[PoseProcessor] Using fallback estimation; measurements need extra review.');
     const result = await this.estimateLandmarksFromImageSize(imageUri, captureType);
     return {
       ...result,
@@ -139,7 +138,7 @@ class PoseProcessor {
 
   /**
    * Multi-frame burst processing (#1).
-   * Takes an array of image URIs (3-5 frames captured rapidly),
+ * Takes an array of image URIs (5-10 frames captured rapidly),
    * processes each, and returns a single result with averaged landmarks.
    * Outlier frames (low confidence or inconsistent) are discarded.
    */
@@ -154,7 +153,7 @@ class PoseProcessor {
     for (const uri of imageUris) {
       try {
         const result = await this.processImage(uri, captureType);
-        if (result.confidence >= 0.3) {
+        if (result.confidence >= 0.45) {
           results.push(result);
         }
       } catch {
@@ -172,7 +171,7 @@ class PoseProcessor {
     }
 
     // Discard outlier frames: remove the frame whose landmarks deviate most
-    const filteredResults = this.filterOutlierFrames(results);
+    const filteredResults = this.selectBestFrames(this.filterOutlierFrames(results));
 
     // Average landmarks across remaining frames
     const avgLandmarks = this.averageLandmarks(filteredResults);
@@ -224,6 +223,13 @@ class PoseProcessor {
     const threshold = median * 2.5;
 
     return results.filter((_, i) => deviations[i] <= threshold);
+  }
+
+  private selectBestFrames(results: PoseProcessingResult[]): PoseProcessingResult[] {
+    const MAX_FRAMES_FOR_AVERAGE = 5;
+    return [...results]
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, MAX_FRAMES_FOR_AVERAGE);
   }
 
   private averageLandmarks(results: PoseProcessingResult[]): Landmark[] {
@@ -438,7 +444,7 @@ class PoseProcessor {
       // If the native module is not installed, the require() will throw.
       // Log once and let caller fall through to estimation.
       if (error?.code === 'MODULE_NOT_FOUND' || error?.message?.includes('Cannot find module')) {
-        console.info('[PoseProcessor] On-device MediaPipe not installed. Install @gymbrosinc/react-native-mediapipe-pose for offline ±2cm accuracy.');
+        console.info('[PoseProcessor] On-device MediaPipe not installed. Install @gymbrosinc/react-native-mediapipe-pose for offline landmark detection.');
       }
       throw new Error(`On-device processing not available: ${error?.message || error}`);
     }

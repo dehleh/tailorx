@@ -30,6 +30,9 @@ export interface BodyMeasurement {
     confidence: Record<string, number>;  // Per-measurement confidence
     anglesUsed: string[];           // e.g. ['front', 'side']
     calibrationMethod: string;      // 'known_height' | 'reference_object' | 'estimated'
+    circumferenceSource?: string;
+    missingRequiredAngles?: string[];
+    calibrationConfidence?: number;
     engineVersion: string;
     processingTimeMs: number;
     warnings: string[];
