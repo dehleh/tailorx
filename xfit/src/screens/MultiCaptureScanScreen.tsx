@@ -75,6 +75,9 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
   const addMeasurement = useMeasurementStore((state) => state.addMeasurement);
   const activeEnterpriseSessionId = useEnterpriseStore((state) => state.activeSessionId);
+  const activeInviteCode = useEnterpriseStore((state) => state.activeInviteCode);
+  const activeEnterpriseCustomerName = useEnterpriseStore((state) => state.activeCustomerName);
+  const activeEnterpriseCustomerEmail = useEnterpriseStore((state) => state.activeCustomerEmail);
   const clearActiveEnterpriseSession = useEnterpriseStore((state) => state.clearActiveSession);
   const user = useUserStore((state) => state.user);
 
@@ -409,7 +412,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         captureAngles,
         calibration,
         knownHeight,
-        (user?.gender as 'male' | 'female' | 'other') || 'other',
+        userGender,
         contourData,
         anchorMeasurement
       );
@@ -461,9 +464,19 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           thigh: safe(result.measurements.thigh),
           calf: safe(result.measurements.calf),
           // Gender-specific and additional measurements
+          ...(result.measurements.bust && { bust: safe(result.measurements.bust) }),
           ...(result.measurements.underbust && { underbust: safe(result.measurements.underbust) }),
+          ...(result.measurements.cupDifference && { cupDifference: safe(result.measurements.cupDifference) }),
           ...(result.measurements.halfLength && { halfLength: safe(result.measurements.halfLength) }),
           ...(result.measurements.topLength && { topLength: safe(result.measurements.topLength) }),
+          ...(result.measurements.frontWidth && { frontWidth: safe(result.measurements.frontWidth) }),
+          ...(result.measurements.backWidth && { backWidth: safe(result.measurements.backWidth) }),
+          ...(result.measurements.armLength && { armLength: safe(result.measurements.armLength) }),
+          ...(result.measurements.outseam && { outseam: safe(result.measurements.outseam) }),
+          ...(result.measurements.rise && { rise: safe(result.measurements.rise) }),
+          ...(result.measurements.knee && { knee: safe(result.measurements.knee) }),
+          ...(result.measurements.ankle && { ankle: safe(result.measurements.ankle) }),
+          ...(result.measurements.wrist && { wrist: safe(result.measurements.wrist) }),
           ...(result.measurements.roundSleeveBicep && { roundSleeveBicep: safe(result.measurements.roundSleeveBicep) }),
           ...(result.measurements.roundSleeveElbow && { roundSleeveElbow: safe(result.measurements.roundSleeveElbow) }),
         },
@@ -479,6 +492,8 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           calibrationConfidence: result.metadata.calibrationConfidence,
           contourConfidenceByPart: result.metadata.contourConfidenceByPart,
           anchorMeasurement: result.metadata.anchorMeasurement,
+          measurementCatalogVersion: result.metadata.measurementCatalogVersion,
+          measurementProfile: result.metadata.measurementProfile,
           engineVersion: result.metadata.engineVersion,
           processingTimeMs: result.metadata.processingTimeMs,
           warnings: result.warnings,
@@ -492,9 +507,26 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           await enterpriseApi.completeSession(activeEnterpriseSessionId, {
             measurementId: newMeasurement.id,
             accuracyScore: result.overallAccuracy,
+            measurements: newMeasurement.measurements,
+            unit: newMeasurement.unit,
+            measurementProfile: userGender,
+            confidence: result.confidence,
+            warnings: result.warnings,
             metadata: {
               anglesUsed: result.metadata.anglesUsed,
               calibrationMethod: result.metadata.calibrationMethod,
+              circumferenceSource: result.metadata.circumferenceSource,
+              missingRequiredAngles: result.metadata.missingRequiredAngles,
+              calibrationConfidence: result.metadata.calibrationConfidence,
+              contourConfidenceByPart: result.metadata.contourConfidenceByPart,
+              anchorMeasurement: result.metadata.anchorMeasurement,
+              measurementCatalogVersion: result.metadata.measurementCatalogVersion,
+              measurementProfile: result.metadata.measurementProfile,
+              engineVersion: result.metadata.engineVersion,
+              processingTimeMs: result.metadata.processingTimeMs,
+              activeInviteCode,
+              customerName: activeEnterpriseCustomerName,
+              customerEmail: activeEnterpriseCustomerEmail,
               warnings: result.warnings,
             },
           });

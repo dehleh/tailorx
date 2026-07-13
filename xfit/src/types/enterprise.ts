@@ -28,6 +28,8 @@ export interface OrganizationLicense {
   scanQuota: number;
   scansUsed: number;
   remainingQuota: number;
+  overageUnits?: number;
+  overageGraceScans?: number;
   status: string;
   billingInterval: string;
   amount: number;
@@ -66,6 +68,38 @@ export interface SessionSummary {
   started_at: string;
   completed_at?: string | null;
   accuracy_score?: number | null;
+  measurement_id?: string | null;
+  measurements?: Record<string, number>;
+  unit?: 'cm' | 'inch';
+  measurement_profile?: 'male' | 'female' | 'other' | string | null;
+  confidence?: Record<string, number>;
+  warnings?: string[];
+  metadata?: Record<string, unknown>;
+  measurementCount?: number;
+  review_status?: string;
+  tailor_notes?: string | null;
+  reviewed_at?: string | null;
+  accuracyStatus?: {
+    status: string;
+    blockers: string[];
+    coverage: {
+      catalogVersion: string;
+      profile: string;
+      totalMeasurements: number;
+      capturedMeasurements: number;
+      requiredMeasurements: number;
+      capturedRequiredMeasurements: number;
+      coveragePct: number;
+      requiredCoveragePct: number;
+      missingRequired: string[];
+      capturedKeys: string[];
+    };
+    confidence: {
+      average: number;
+      lowConfidenceParts: string[];
+      measuredParts: number;
+    };
+  };
   customer_name: string;
   customer_email: string;
   invite_code?: string | null;
@@ -82,6 +116,67 @@ export interface OrganizationDashboard {
   };
   recentSessions: SessionSummary[];
   inviteLinks: InviteLinkSummary[];
+  measurementCatalog?: MeasurementCatalogResponse;
+  accuracyCertification?: AccuracyCertification;
+  businessHealth?: Record<string, unknown>;
+  trustPosture?: Record<string, unknown>;
+  appLinks?: AppLinkStatus;
+  recentEvents?: OrganizationEvent[];
+  auditLogs?: Array<Record<string, unknown>>;
+}
+
+export interface MeasurementCatalogItem {
+  key: string;
+  label: string;
+  profile: 'all' | 'male' | 'female' | 'other';
+  type: 'linear' | 'circumference' | 'derived';
+  requiredForFit: boolean;
+  requiresSideView: boolean;
+  source: string;
+  garmentUses: string[];
+}
+
+export interface MeasurementCatalogResponse {
+  version: string;
+  items: MeasurementCatalogItem[];
+  profiles?: Record<string, MeasurementCatalogItem[]>;
+}
+
+export interface AccuracyCertification {
+  status: string;
+  sampleSize: number;
+  targetSampleSize: number;
+  minimumPublishableSampleSize: number;
+  failureRatePct: number;
+  aggregateP90ErrorCm?: number | null;
+  partMetrics: Record<string, {
+    sampleSize: number;
+    mae: number;
+    medianError: number;
+    p90Error: number;
+    p95Error: number;
+  }>;
+  claimLanguage: string;
+}
+
+export interface AppLinkStatus {
+  scheme: string;
+  androidPackage: string;
+  iosBundleIdentifier: string;
+  webInvitePath: string;
+  androidAppLinksReady: boolean;
+  iosUniversalLinksReady: boolean;
+  requiredEnv?: Record<string, boolean>;
+}
+
+export interface OrganizationEvent {
+  id: string;
+  eventType?: string;
+  event_type?: string;
+  payload?: Record<string, unknown>;
+  actorUserId?: string | null;
+  createdAt?: string;
+  created_at?: string;
 }
 
 export interface CreateInvitePayload {
@@ -116,8 +211,16 @@ export interface InviteLookupResponse {
     scanQuota: number;
     scansUsed: number;
     remainingQuota: number;
+    overageUnits?: number;
+    overageGraceScans?: number;
     canStartSession: boolean;
   };
+  measurementCatalog?: {
+    version: string;
+    profiles: string[];
+    requiredAngles: string[];
+  };
+  appLinks?: AppLinkStatus;
 }
 
 export interface InviteLinkCreateResult {
@@ -144,6 +247,11 @@ export interface EnterpriseSessionStartResult {
 export interface EnterpriseSessionCompletePayload {
   measurementId?: string;
   accuracyScore?: number;
+  measurements?: Record<string, number>;
+  unit?: 'cm' | 'inch';
+  measurementProfile?: 'male' | 'female' | 'other' | string;
+  confidence?: Record<string, number>;
+  warnings?: string[];
   metadata?: Record<string, unknown>;
 }
 

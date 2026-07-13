@@ -69,6 +69,29 @@ const MEASUREMENT_META: Record<
   calf: { icon: '👟', label: 'Calf' },
 };
 
+const EXPANDED_MEASUREMENT_LABELS: Record<string, string> = {
+  bust: 'Bust',
+  cupDifference: 'Bust Difference',
+  frontWidth: 'Front Width',
+  backWidth: 'Back Width',
+  armLength: 'Arm Length',
+  wrist: 'Wrist',
+  outseam: 'Outseam',
+  rise: 'Rise',
+  knee: 'Knee',
+  ankle: 'Ankle',
+};
+
+function getMeasurementMeta(key: string) {
+  const existing = MEASUREMENT_META[key];
+  const label = EXPANDED_MEASUREMENT_LABELS[key] || existing?.label || key;
+  return {
+    icon: existing?.icon || 'M',
+    label,
+    isWeight: existing?.isWeight,
+  };
+}
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -126,7 +149,7 @@ export default function ScanResultsScreen({
     return Object.entries(result.measurements)
       .filter(([_, value]) => value > 0)
       .map(([key, value]) => {
-        const meta = MEASUREMENT_META[key] || { icon: 'M', label: key };
+        const meta = getMeasurementMeta(key);
         return { key, label: meta.label, icon: meta.icon, value, isWeight: meta.isWeight };
       });
   }, [result]);
@@ -156,7 +179,7 @@ export default function ScanResultsScreen({
     return Object.entries(contourConfidence)
       .filter(([_, value]) => value < 55)
       .sort((a, b) => a[1] - b[1])
-      .map(([key]) => MEASUREMENT_META[key]?.label || key)
+      .map(([key]) => getMeasurementMeta(key).label)
       .slice(0, 4);
   }, [result]);
 
@@ -171,7 +194,7 @@ export default function ScanResultsScreen({
 
     if (lowConfidenceEntries.length > 0) {
       const labels = lowConfidenceEntries
-        .map(([key, value]) => `${MEASUREMENT_META[key]?.label || key} ${value}%`)
+        .map(([key, value]) => `${getMeasurementMeta(key).label} ${value}%`)
         .join(', ');
       items.push(`Low estimate confidence: ${labels}`);
     }
@@ -251,6 +274,8 @@ export default function ScanResultsScreen({
         calibrationConfidence: result.metadata.calibrationConfidence,
         contourConfidenceByPart: result.metadata.contourConfidenceByPart,
         anchorMeasurement: result.metadata.anchorMeasurement,
+        measurementCatalogVersion: result.metadata.measurementCatalogVersion,
+        measurementProfile: result.metadata.measurementProfile,
         engineVersion: result.metadata.engineVersion,
         processingTimeMs: result.metadata.processingTimeMs,
         warnings: result.warnings,
@@ -443,7 +468,7 @@ export default function ScanResultsScreen({
             {result.metadata.anchorMeasurement && (
               <Text style={styles.detailsRow}>
                 <Text style={styles.detailsKey}>Anchor: </Text>
-                {MEASUREMENT_META[result.metadata.anchorMeasurement.key]?.label || result.metadata.anchorMeasurement.key} {result.metadata.anchorMeasurement.valueCm}cm
+                {getMeasurementMeta(result.metadata.anchorMeasurement.key).label} {result.metadata.anchorMeasurement.valueCm}cm
               </Text>
             )}
             {result.metadata.missingRequiredAngles && result.metadata.missingRequiredAngles.length > 0 && (
@@ -485,7 +510,7 @@ export default function ScanResultsScreen({
                 <Text style={[styles.detailsKey, { marginTop: 10, marginBottom: 4 }]}>Contour confidence:</Text>
                 {Object.entries(result.metadata.contourConfidenceByPart).map(([k, v]) => (
                   <Text key={k} style={styles.detailsRow}>
-                    <Text style={styles.detailsKey}>{MEASUREMENT_META[k]?.label || k}: </Text>
+                    <Text style={styles.detailsKey}>{getMeasurementMeta(k).label}: </Text>
                     {v}%
                   </Text>
                 ))}

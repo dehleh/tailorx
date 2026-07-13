@@ -15,9 +15,19 @@ export interface BodyMeasurement {
     thigh: number;
     calf: number;
     // Female-specific garment measurements
+    bust?: number;              // Female bust circumference (same scan level as chest)
     underbust?: number;         // Round under bust circumference
+    cupDifference?: number;     // Bust minus underbust, used for cup estimation
     halfLength?: number;        // Shoulder to waist length
     topLength?: number;         // Shoulder to hip length (full top length)
+    frontWidth?: number;        // Front garment width
+    backWidth?: number;         // Back garment width
+    armLength?: number;         // Full arm length
+    outseam?: number;           // Side waist/hip to ankle/floor line
+    rise?: number;              // Trouser rise
+    knee?: number;              // Knee circumference
+    ankle?: number;             // Ankle circumference
+    wrist?: number;             // Wrist circumference
     // Arm circumferences (all genders, useful for shirt/blouse fitting)
     roundSleeveBicep?: number;  // Upper arm circumference at bicep
     roundSleeveElbow?: number;  // Circumference at elbow
@@ -35,6 +45,8 @@ export interface BodyMeasurement {
     calibrationConfidence?: number;
     contourConfidenceByPart?: Record<string, number>;
     anchorMeasurement?: { key: string; valueCm: number };
+    measurementCatalogVersion?: string;
+    measurementProfile?: 'male' | 'female' | 'other';
     engineVersion: string;
     processingTimeMs: number;
     warnings: string[];

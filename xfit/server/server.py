@@ -37,6 +37,7 @@ import re
 import sqlite3
 import secrets
 import uuid
+import statistics
 from typing import Optional, Any
 from datetime import datetime, timedelta
 
@@ -150,6 +151,261 @@ if PAYSTACK_PLAN_GROWTH:
     PAYSTACK_PLAN_MAP["growth"] = PAYSTACK_PLAN_GROWTH
 if PAYSTACK_PLAN_ENTERPRISE:
     PAYSTACK_PLAN_MAP["enterprise"] = PAYSTACK_PLAN_ENTERPRISE
+
+MEASUREMENT_CATALOG_VERSION = "tailorx-iso8559-1-v1"
+
+MEASUREMENT_CATALOG: list[dict[str, Any]] = [
+    {
+        "key": "height",
+        "label": "Height",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": True,
+        "requiresSideView": False,
+        "source": "pose+calibration",
+        "garmentUses": ["all"],
+    },
+    {
+        "key": "chest",
+        "label": "Chest/Bust circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": True,
+        "source": "front+side contour ellipse",
+        "garmentUses": ["shirt", "dress", "jacket", "agbada", "kaftan"],
+    },
+    {
+        "key": "bust",
+        "label": "Bust circumference",
+        "profile": "female",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": True,
+        "source": "chest/bust contour",
+        "garmentUses": ["dress", "blouse", "corset"],
+    },
+    {
+        "key": "underbust",
+        "label": "Underbust circumference",
+        "profile": "female",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": True,
+        "source": "front+side ellipse",
+        "garmentUses": ["dress", "blouse", "corset"],
+    },
+    {
+        "key": "cupDifference",
+        "label": "Bust minus underbust",
+        "profile": "female",
+        "type": "derived",
+        "requiredForFit": False,
+        "requiresSideView": True,
+        "source": "bust-underbust",
+        "garmentUses": ["corset", "bra-fitting"],
+    },
+    {
+        "key": "waist",
+        "label": "Waist circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": True,
+        "source": "front+side contour ellipse",
+        "garmentUses": ["trouser", "skirt", "dress", "shirt"],
+    },
+    {
+        "key": "hips",
+        "label": "Hip/seat circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": True,
+        "source": "front+side contour ellipse",
+        "garmentUses": ["trouser", "skirt", "dress"],
+    },
+    {
+        "key": "shoulders",
+        "label": "Shoulder width",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": True,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["shirt", "dress", "jacket"],
+    },
+    {
+        "key": "neck",
+        "label": "Neck circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": True,
+        "source": "front+side ellipse",
+        "garmentUses": ["shirt", "jacket", "kaftan"],
+    },
+    {
+        "key": "sleeve",
+        "label": "Sleeve length",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": True,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["shirt", "dress", "jacket"],
+    },
+    {
+        "key": "armLength",
+        "label": "Full arm length",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["shirt", "jacket"],
+    },
+    {
+        "key": "roundSleeveBicep",
+        "label": "Upper arm circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": False,
+        "source": "height ratio fallback",
+        "garmentUses": ["shirt", "dress", "jacket"],
+    },
+    {
+        "key": "roundSleeveElbow",
+        "label": "Elbow circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "height ratio fallback",
+        "garmentUses": ["shirt", "jacket"],
+    },
+    {
+        "key": "wrist",
+        "label": "Wrist circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "height ratio fallback",
+        "garmentUses": ["shirt", "jacket"],
+    },
+    {
+        "key": "inseam",
+        "label": "Inseam length",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": True,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["trouser"],
+    },
+    {
+        "key": "outseam",
+        "label": "Outseam length",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["trouser", "skirt"],
+    },
+    {
+        "key": "rise",
+        "label": "Trouser rise",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "height ratio fallback",
+        "garmentUses": ["trouser"],
+    },
+    {
+        "key": "thigh",
+        "label": "Thigh circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": True,
+        "requiresSideView": True,
+        "source": "front+side contour ellipse",
+        "garmentUses": ["trouser", "shorts"],
+    },
+    {
+        "key": "knee",
+        "label": "Knee circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "height ratio fallback",
+        "garmentUses": ["trouser"],
+    },
+    {
+        "key": "calf",
+        "label": "Calf circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": False,
+        "requiresSideView": True,
+        "source": "front+side contour ellipse",
+        "garmentUses": ["trouser"],
+    },
+    {
+        "key": "ankle",
+        "label": "Ankle circumference",
+        "profile": "all",
+        "type": "circumference",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "height ratio fallback",
+        "garmentUses": ["trouser"],
+    },
+    {
+        "key": "halfLength",
+        "label": "Shoulder to waist",
+        "profile": "female",
+        "type": "linear",
+        "requiredForFit": True,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["dress", "blouse"],
+    },
+    {
+        "key": "topLength",
+        "label": "Top length",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["shirt", "blouse", "kaftan"],
+    },
+    {
+        "key": "backWidth",
+        "label": "Back width",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["shirt", "jacket"],
+    },
+    {
+        "key": "frontWidth",
+        "label": "Front width",
+        "profile": "all",
+        "type": "linear",
+        "requiredForFit": False,
+        "requiresSideView": False,
+        "source": "pose landmarks",
+        "garmentUses": ["shirt", "dress", "jacket"],
+    },
+]
 
 
 def _validate_production_env() -> None:
@@ -337,7 +593,25 @@ class EnterpriseSessionStartRequest(BaseModel):
 class EnterpriseSessionCompleteRequest(BaseModel):
     measurementId: Optional[str] = None
     accuracyScore: Optional[float] = None
+    measurements: Optional[dict[str, float]] = None
+    unit: str = Field(default="cm", max_length=8)
+    measurementProfile: Optional[str] = Field(default=None, max_length=40)
+    confidence: Optional[dict[str, float]] = None
+    warnings: Optional[list[str]] = None
     metadata: Optional[dict[str, Any]] = None
+
+
+class EnterpriseSessionReviewRequest(BaseModel):
+    reviewStatus: str = Field(default="reviewed", max_length=32)
+    tailorNotes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class AccuracyBenchmarkRecordRequest(BaseModel):
+    measurementId: Optional[str] = Field(default=None, max_length=120)
+    measurementProfile: Optional[str] = Field(default=None, max_length=40)
+    scanMeasurements: dict[str, float]
+    tapeMeasurements: dict[str, float]
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 class BillingCheckoutRequest(BaseModel):
@@ -797,6 +1071,15 @@ def init_enterprise_db() -> None:
                 customer_id TEXT NOT NULL,
                 invite_link_id TEXT,
                 measurement_id TEXT,
+                measurements_json TEXT,
+                unit TEXT,
+                measurement_profile TEXT,
+                confidence_json TEXT,
+                warnings_json TEXT,
+                review_status TEXT NOT NULL DEFAULT 'pending',
+                tailor_notes TEXT,
+                reviewed_at TEXT,
+                reviewed_by_user_id TEXT,
                 source TEXT NOT NULL DEFAULT 'invite_link',
                 status TEXT NOT NULL DEFAULT 'started',
                 accuracy_score REAL,
@@ -836,6 +1119,43 @@ def init_enterprise_db() -> None:
                 FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
                 FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS org_events (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT,
+                actor_user_id TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+                FOREIGN KEY (actor_user_id) REFERENCES organization_users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT,
+                actor_user_id TEXT,
+                action TEXT NOT NULL,
+                subject_type TEXT,
+                subject_id TEXT,
+                payload_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+                FOREIGN KEY (actor_user_id) REFERENCES organization_users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS accuracy_benchmark_records (
+                id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                measurement_id TEXT,
+                measurement_profile TEXT,
+                scan_measurements_json TEXT NOT NULL,
+                tape_measurements_json TEXT NOT NULL,
+                errors_json TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+            );
             """
         )
         _ensure_column(conn, 'billing_records', 'paystack_customer_code', 'TEXT')
@@ -855,6 +1175,20 @@ def init_enterprise_db() -> None:
             )
             """
         )
+
+        for column_name, definition in (
+            ("measurements_json", "TEXT"),
+            ("unit", "TEXT"),
+            ("measurement_profile", "TEXT"),
+            ("confidence_json", "TEXT"),
+            ("warnings_json", "TEXT"),
+            ("review_status", "TEXT NOT NULL DEFAULT 'pending'"),
+            ("tailor_notes", "TEXT"),
+            ("reviewed_at", "TEXT"),
+            ("reviewed_by_user_id", "TEXT"),
+        ):
+            _ensure_column(conn, "measurement_sessions", column_name, definition)
+
         # Webhook idempotency: store every processed Paystack reference
         conn.execute(
             """
@@ -900,6 +1234,10 @@ def init_enterprise_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_invite_links_code ON invite_links(code)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_org_id ON measurement_sessions(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON measurement_sessions(customer_id)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_review_status ON measurement_sessions(review_status)",
+            "CREATE INDEX IF NOT EXISTS idx_org_events_org_created ON org_events(organization_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_org_created ON audit_logs(organization_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_accuracy_benchmarks_org ON accuracy_benchmark_records(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_measurement_shares_token ON measurement_shares(token)",
             "CREATE INDEX IF NOT EXISTS idx_measurement_shares_measurement_id ON measurement_shares(measurement_id)",
             "CREATE INDEX IF NOT EXISTS idx_billing_org_id ON billing_records(organization_id)",
@@ -1024,6 +1362,322 @@ def _build_checkout_url(organization_id: str, license_id: str) -> str:
     return f"{WEB_APP_URL}/billing?org={organization_id}&lic={license_id}"
 
 
+def _normalize_measurement_profile(profile: Optional[str]) -> str:
+    normalized = (profile or "other").strip().lower()
+    return normalized if normalized in ("male", "female", "other") else "other"
+
+
+def _measurement_catalog_for_profile(profile: Optional[str]) -> list[dict[str, Any]]:
+    normalized = _normalize_measurement_profile(profile)
+    return [
+        item
+        for item in MEASUREMENT_CATALOG
+        if item["profile"] in ("all", normalized)
+    ]
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(ordered[0], 2)
+    position = (len(ordered) - 1) * pct
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * fraction, 2)
+
+
+def _catalog_coverage_for_measurements(
+    measurements: dict[str, Any],
+    profile: Optional[str],
+) -> dict[str, Any]:
+    catalog = _measurement_catalog_for_profile(profile)
+    required = [item for item in catalog if item.get("requiredForFit")]
+    captured_keys = [
+        item["key"]
+        for item in catalog
+        if isinstance(measurements.get(item["key"]), (int, float))
+        and float(measurements[item["key"]]) > 0
+    ]
+    captured_set = set(captured_keys)
+    missing_required = [item["key"] for item in required if item["key"] not in captured_set]
+    required_captured = len(required) - len(missing_required)
+    return {
+        "catalogVersion": MEASUREMENT_CATALOG_VERSION,
+        "profile": _normalize_measurement_profile(profile),
+        "totalMeasurements": len(catalog),
+        "capturedMeasurements": len(captured_set),
+        "requiredMeasurements": len(required),
+        "capturedRequiredMeasurements": required_captured,
+        "coveragePct": round((len(captured_set) / len(catalog)) * 100, 1) if catalog else 0,
+        "requiredCoveragePct": round((required_captured / len(required)) * 100, 1) if required else 0,
+        "missingRequired": missing_required,
+        "capturedKeys": captured_keys,
+    }
+
+
+def _confidence_summary(confidence: dict[str, Any]) -> dict[str, Any]:
+    values = [
+        float(value)
+        for value in confidence.values()
+        if isinstance(value, (int, float)) and float(value) > 0
+    ]
+    low_parts = [
+        key
+        for key, value in confidence.items()
+        if isinstance(value, (int, float)) and 0 < float(value) < 60
+    ]
+    return {
+        "average": round(sum(values) / len(values), 1) if values else 0,
+        "lowConfidenceParts": low_parts,
+        "measuredParts": len(values),
+    }
+
+
+def _accuracy_status_from_session(
+    measurements: dict[str, Any],
+    confidence: dict[str, Any],
+    warnings: list[str],
+    profile: Optional[str],
+) -> dict[str, Any]:
+    coverage = _catalog_coverage_for_measurements(measurements, profile)
+    confidence_info = _confidence_summary(confidence)
+    blockers: list[str] = []
+    if coverage["missingRequired"]:
+        blockers.append("missing_required_measurements")
+    if confidence_info["average"] and confidence_info["average"] < 70:
+        blockers.append("low_average_confidence")
+    if warnings:
+        blockers.append("scan_warnings_present")
+    status = "ready_for_tailor" if not blockers else "review_recommended"
+    return {
+        "status": status,
+        "blockers": blockers,
+        "coverage": coverage,
+        "confidence": confidence_info,
+    }
+
+
+def _compute_accuracy_certification(conn: sqlite3.Connection, organization_id: str) -> dict[str, Any]:
+    rows = conn.execute(
+        """
+        SELECT errors_json, created_at
+        FROM accuracy_benchmark_records
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 500
+        """,
+        (organization_id,),
+    ).fetchall()
+    errors_by_part: dict[str, list[float]] = {}
+    total_error_count = 0
+    high_error_count = 0
+    for row in rows:
+        errors = _json_or_default(row["errors_json"], {})
+        if not isinstance(errors, dict):
+            continue
+        for key, value in errors.items():
+            if not isinstance(value, (int, float)):
+                continue
+            abs_error = abs(float(value))
+            errors_by_part.setdefault(key, []).append(abs_error)
+            total_error_count += 1
+            if abs_error > 5:
+                high_error_count += 1
+
+    part_metrics = {
+        key: {
+            "sampleSize": len(values),
+            "mae": round(sum(values) / len(values), 2),
+            "medianError": round(statistics.median(values), 2),
+            "p90Error": _percentile(values, 0.9),
+            "p95Error": _percentile(values, 0.95),
+        }
+        for key, values in sorted(errors_by_part.items())
+        if values
+    }
+    sample_size = len(rows)
+    p90_values = [metrics["p90Error"] for metrics in part_metrics.values()]
+    aggregate_p90 = round(sum(p90_values) / len(p90_values), 2) if p90_values else None
+    failure_rate = round((high_error_count / total_error_count) * 100, 1) if total_error_count else 0
+    if sample_size == 0:
+        status = "unverified"
+        claim_language = "Do not publish accuracy claims yet. No tape-measure benchmark records are stored."
+    elif sample_size < 20:
+        status = "collecting"
+        claim_language = "Use pilot language only until at least 20 benchmark users are recorded."
+    elif aggregate_p90 is not None and aggregate_p90 <= 3.0 and failure_rate <= 5:
+        status = "validated_internal"
+        claim_language = "Internal benchmark supports bounded accuracy language with published MAE/P90."
+    else:
+        status = "needs_review"
+        claim_language = "Benchmark exists, but errors are too high for strong accuracy claims."
+    return {
+        "status": status,
+        "catalogVersion": MEASUREMENT_CATALOG_VERSION,
+        "sampleSize": sample_size,
+        "targetSampleSize": 50,
+        "minimumPublishableSampleSize": 20,
+        "failureRatePct": failure_rate,
+        "aggregateP90ErrorCm": aggregate_p90,
+        "partMetrics": part_metrics,
+        "claimLanguage": claim_language,
+    }
+
+
+def _build_business_health(
+    conn: sqlite3.Connection,
+    organization_id: str,
+    license_row: sqlite3.Row,
+) -> dict[str, Any]:
+    session_stats = conn.execute(
+        """
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+          AVG(CASE WHEN status = 'completed' THEN accuracy_score ELSE NULL END) AS avg_accuracy
+        FROM measurement_sessions
+        WHERE organization_id = ?
+        """,
+        (organization_id,),
+    ).fetchone()
+    active_invites = conn.execute(
+        "SELECT COUNT(*) AS count FROM invite_links WHERE organization_id = ? AND status = 'active'",
+        (organization_id,),
+    ).fetchone()["count"]
+    review_backlog = conn.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM measurement_sessions
+        WHERE organization_id = ? AND status = 'completed' AND review_status != 'reviewed'
+        """,
+        (organization_id,),
+    ).fetchone()["count"]
+    total = int(session_stats["total"] or 0)
+    completed = int(session_stats["completed"] or 0)
+    completion_rate = round((completed / total) * 100, 1) if total else 0
+    utilization_rate = round((license_row["scans_used"] / license_row["scan_quota"]) * 100, 1) if license_row["scan_quota"] else 0
+    next_actions: list[str] = []
+    if active_invites == 0:
+        next_actions.append("Create a client invite link.")
+    if review_backlog > 0:
+        next_actions.append("Review completed customer measurements.")
+    if utilization_rate >= 80:
+        next_actions.append("Top up or renew scan quota.")
+    if not next_actions:
+        next_actions.append("Keep sending invite links and monitoring accuracy.")
+    return {
+        "activeInviteCount": active_invites,
+        "completionRatePct": completion_rate,
+        "averageAccuracyScore": round(float(session_stats["avg_accuracy"]), 1) if session_stats["avg_accuracy"] is not None else None,
+        "reviewBacklog": review_backlog,
+        "quotaUtilizationPct": utilization_rate,
+        "projectedOverageAmount": round(_overage_units(license_row) * OVERAGE_SCAN_PRICE, 2),
+        "currency": license_row["currency"],
+        "nextActions": next_actions,
+    }
+
+
+def _build_trust_posture(conn: sqlite3.Connection, organization_id: str) -> dict[str, Any]:
+    audit_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM audit_logs WHERE organization_id = ?",
+        (organization_id,),
+    ).fetchone()["count"]
+    benchmark_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM accuracy_benchmark_records WHERE organization_id = ?",
+        (organization_id,),
+    ).fetchone()["count"]
+    return {
+        "imageRetention": "Enterprise completion stores derived measurements and metadata only.",
+        "bodyDataStorage": "Measurement payloads are sanitized server-side before dashboard storage.",
+        "sharing": "Share links are tokenized, expiring, read-only, and revocable.",
+        "auditLogCount": audit_count,
+        "benchmarkRecordCount": benchmark_count,
+        "controls": [
+            "HttpOnly admin session cookies",
+            "Role-based organization access",
+            "Invite quota enforcement",
+            "No captured photo upload in enterprise completion payload",
+            "Benchmark-gated accuracy claim language",
+        ],
+    }
+
+
+def _build_app_link_status() -> dict[str, Any]:
+    android_fingerprints = [
+        item.strip()
+        for item in os.environ.get("ANDROID_SHA256_CERT_FINGERPRINTS", "").split(",")
+        if item.strip()
+    ]
+    apple_app_identifier = os.environ.get("APPLE_APP_IDENTIFIER", "").strip()
+    return {
+        "scheme": "tailorxfit",
+        "androidPackage": "com.tailorx.app",
+        "iosBundleIdentifier": "com.tailorx.app",
+        "webInvitePath": "/invite/:code",
+        "androidAppLinksReady": bool(android_fingerprints),
+        "iosUniversalLinksReady": bool(apple_app_identifier),
+        "requiredEnv": {
+            "ANDROID_SHA256_CERT_FINGERPRINTS": bool(android_fingerprints),
+            "APPLE_APP_IDENTIFIER": bool(apple_app_identifier),
+        },
+    }
+
+
+def _record_org_event(
+    conn: sqlite3.Connection,
+    organization_id: str,
+    event_type: str,
+    payload: Optional[dict[str, Any]] = None,
+    actor_user_id: Optional[str] = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO org_events (id, organization_id, event_type, payload_json, actor_user_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            _new_id("evt"),
+            organization_id,
+            event_type,
+            json.dumps(payload or {}, separators=(",", ":"), default=str),
+            actor_user_id,
+            _enterprise_now(),
+        ),
+    )
+
+
+def _record_audit_event(
+    conn: sqlite3.Connection,
+    action: str,
+    *,
+    organization_id: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+    subject_type: Optional[str] = None,
+    subject_id: Optional[str] = None,
+    payload: Optional[dict[str, Any]] = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO audit_logs (
+            id, organization_id, actor_user_id, action, subject_type, subject_id, payload_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            _new_id("aud"),
+            organization_id,
+            actor_user_id,
+            action,
+            subject_type,
+            subject_id,
+            json.dumps(payload or {}, separators=(",", ":"), default=str),
+            _enterprise_now(),
+        ),
+    )
+
+
 def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> dict[str, Any]:
     organization = _get_org_or_404(conn, organization_id)
     license_row = _get_license_for_org(conn, organization_id)
@@ -1042,6 +1696,9 @@ def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> 
     recent_sessions = conn.execute(
         """
         SELECT ms.id, ms.status, ms.started_at, ms.completed_at, ms.accuracy_score,
+               ms.measurement_id, ms.measurements_json, ms.unit, ms.measurement_profile,
+               ms.confidence_json, ms.warnings_json, ms.metadata_json,
+               ms.review_status, ms.tailor_notes, ms.reviewed_at, ms.reviewed_by_user_id,
                c.full_name AS customer_name, c.email AS customer_email,
                il.code AS invite_code, il.label AS invite_label
         FROM measurement_sessions ms
@@ -1063,6 +1720,47 @@ def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> 
         """,
         (organization_id,),
     ).fetchall()
+    recent_events = conn.execute(
+        """
+        SELECT id, event_type, payload_json, actor_user_id, created_at
+        FROM org_events
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 12
+        """,
+        (organization_id,),
+    ).fetchall()
+    recent_audit_logs = conn.execute(
+        """
+        SELECT id, action, subject_type, subject_id, payload_json, created_at
+        FROM audit_logs
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 12
+        """,
+        (organization_id,),
+    ).fetchall()
+
+    serialized_sessions: list[dict[str, Any]] = []
+    for row in recent_sessions:
+        session = dict(row)
+        session["measurements"] = _json_or_default(session.pop("measurements_json", None), {})
+        session["confidence"] = _json_or_default(session.pop("confidence_json", None), {})
+        session["warnings"] = _json_or_default(session.pop("warnings_json", None), [])
+        session["metadata"] = _json_or_default(session.pop("metadata_json", None), {})
+        session["unit"] = session.get("unit") or "cm"
+        session["measurementCount"] = len(session["measurements"])
+        session["accuracyStatus"] = _accuracy_status_from_session(
+            session["measurements"],
+            session["confidence"],
+            session["warnings"],
+            session.get("measurement_profile"),
+        )
+        serialized_sessions.append(session)
+
+    accuracy_certification = _compute_accuracy_certification(conn, organization_id)
+    business_health = _build_business_health(conn, organization_id, license_row)
+    trust_posture = _build_trust_posture(conn, organization_id)
 
     return {
         "organization": {
@@ -1095,13 +1793,40 @@ def _serialize_org_dashboard(conn: sqlite3.Connection, organization_id: str) -> 
             "customerCount": customer_count,
             "sessionCount": session_count,
         },
-        "recentSessions": [dict(row) for row in recent_sessions],
+        "recentSessions": serialized_sessions,
         "inviteLinks": [
             {
                 **dict(row),
                 "publicUrl": f"https://tailorxfit.com/invite/{row['code']}",
             }
             for row in invite_links
+        ],
+        "measurementCatalog": {
+            "version": MEASUREMENT_CATALOG_VERSION,
+            "items": MEASUREMENT_CATALOG,
+            "profiles": {
+                "male": _measurement_catalog_for_profile("male"),
+                "female": _measurement_catalog_for_profile("female"),
+                "other": _measurement_catalog_for_profile("other"),
+            },
+        },
+        "accuracyCertification": accuracy_certification,
+        "businessHealth": business_health,
+        "trustPosture": trust_posture,
+        "appLinks": _build_app_link_status(),
+        "recentEvents": [
+            {
+                **dict(row),
+                "payload": _json_or_default(row["payload_json"], {}),
+            }
+            for row in recent_events
+        ],
+        "auditLogs": [
+            {
+                **dict(row),
+                "payload": _json_or_default(row["payload_json"], {}),
+            }
+            for row in recent_audit_logs
         ],
     }
 
@@ -1506,6 +2231,42 @@ def _parse_enterprise_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", ""))
 
 
+def _clean_numeric_payload(
+    payload: Optional[dict[str, float]],
+    *,
+    max_value: float = 400.0,
+) -> dict[str, float]:
+    """Keep only plausible positive numeric values for dashboard storage."""
+    if not payload:
+        return {}
+    clean: dict[str, float] = {}
+    for key, value in payload.items():
+        if not re.match(r"^[A-Za-z][A-Za-z0-9_]{0,60}$", str(key)):
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0 and parsed <= max_value:
+            clean[str(key)] = round(parsed, 2)
+    return clean
+
+
+def _clean_warning_payload(payload: Optional[list[str]]) -> list[str]:
+    if not payload:
+        return []
+    return [str(item)[:240] for item in payload if str(item).strip()][:12]
+
+
+def _json_or_default(value: Optional[str], default: Any) -> Any:
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except Exception:
+        return default
+
+
 @app.post("/v1/shares")
 async def create_measurement_share(request: Request, payload: MeasurementShareCreateRequest):
     """Create an expiring, read-only measurement share link.
@@ -1692,6 +2453,22 @@ async def bootstrap_enterprise(request: EnterpriseBootstrapRequest):
                 now,
             ),
         )
+        _record_org_event(
+            conn,
+            organization_id,
+            "organization_bootstrapped",
+            {"inviteCode": invite_code, "trialScanQuota": trial_scan_quota},
+            admin_user_id,
+        )
+        _record_audit_event(
+            conn,
+            "organization_bootstrapped",
+            organization_id=organization_id,
+            actor_user_id=admin_user_id,
+            subject_type="organization",
+            subject_id=organization_id,
+            payload={"inviteCode": invite_code},
+        )
         conn.commit()
     except sqlite3.IntegrityError as exc:
         conn.rollback()
@@ -1750,6 +2527,189 @@ async def get_organization_dashboard(
         conn.close()
 
 
+@app.get("/v1/measurements/catalog")
+async def get_measurement_catalog(profile: Optional[str] = None):
+    """Return the production measurement catalog used by mobile and dashboards."""
+    return {
+        "version": MEASUREMENT_CATALOG_VERSION,
+        "profile": _normalize_measurement_profile(profile) if profile else None,
+        "items": _measurement_catalog_for_profile(profile) if profile else MEASUREMENT_CATALOG,
+    }
+
+
+@app.get("/v1/app-links/status")
+async def get_app_links_status():
+    return _build_app_link_status()
+
+
+@app.get("/v1/enterprise/organizations/{organization_id}/events")
+async def get_organization_events(
+    organization_id: str,
+    since: Optional[str] = None,
+    user: dict = Depends(_require_role("org_owner", "org_admin", "super_admin")),
+):
+    _require_org_access(organization_id, user)
+    conn = _enterprise_connection()
+    try:
+        if since:
+            rows = conn.execute(
+                """
+                SELECT id, event_type, payload_json, actor_user_id, created_at
+                FROM org_events
+                WHERE organization_id = ? AND created_at > ?
+                ORDER BY created_at ASC
+                LIMIT 50
+                """,
+                (organization_id, since),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, event_type, payload_json, actor_user_id, created_at
+                FROM org_events
+                WHERE organization_id = ?
+                ORDER BY created_at DESC
+                LIMIT 20
+                """,
+                (organization_id,),
+            ).fetchall()
+            rows = list(reversed(rows))
+        events = [
+            {
+                "id": row["id"],
+                "eventType": row["event_type"],
+                "payload": _json_or_default(row["payload_json"], {}),
+                "actorUserId": row["actor_user_id"],
+                "createdAt": row["created_at"],
+            }
+            for row in rows
+        ]
+        cursor = events[-1]["createdAt"] if events else since
+        return {"events": events, "cursor": cursor}
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/organizations/{organization_id}/accuracy-benchmarks")
+async def create_accuracy_benchmark_record(
+    organization_id: str,
+    request: AccuracyBenchmarkRecordRequest,
+    user: dict = Depends(_require_role("org_owner", "org_admin", "super_admin")),
+):
+    _require_org_access(organization_id, user)
+    scan_measurements = _clean_numeric_payload(request.scanMeasurements)
+    tape_measurements = _clean_numeric_payload(request.tapeMeasurements)
+    common_keys = sorted(set(scan_measurements).intersection(tape_measurements))
+    if not common_keys:
+        raise HTTPException(status_code=400, detail="At least one scan/tape measurement pair is required")
+    errors = {
+        key: round(abs(scan_measurements[key] - tape_measurements[key]), 2)
+        for key in common_keys
+    }
+    record_id = _new_id("bench")
+    now = _enterprise_now()
+    conn = _enterprise_connection()
+    try:
+        _get_org_or_404(conn, organization_id)
+        conn.execute(
+            """
+            INSERT INTO accuracy_benchmark_records (
+                id, organization_id, measurement_id, measurement_profile,
+                scan_measurements_json, tape_measurements_json, errors_json, notes, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                organization_id,
+                request.measurementId,
+                request.measurementProfile,
+                json.dumps(scan_measurements, separators=(",", ":")),
+                json.dumps(tape_measurements, separators=(",", ":")),
+                json.dumps(errors, separators=(",", ":")),
+                request.notes,
+                now,
+            ),
+        )
+        _record_org_event(
+            conn,
+            organization_id,
+            "accuracy_benchmark_recorded",
+            {"recordId": record_id, "measurementId": request.measurementId, "parts": common_keys},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "accuracy_benchmark_recorded",
+            organization_id=organization_id,
+            actor_user_id=user.get("sub"),
+            subject_type="accuracy_benchmark_record",
+            subject_id=record_id,
+            payload={"parts": common_keys},
+        )
+        conn.commit()
+        return {
+            "id": record_id,
+            "errors": errors,
+            "createdAt": now,
+            "accuracyCertification": _compute_accuracy_certification(conn, organization_id),
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/sessions/{session_id}/review")
+async def review_enterprise_session(
+    session_id: str,
+    request: EnterpriseSessionReviewRequest,
+    user: dict = Depends(_require_role("org_owner", "org_admin", "staff", "super_admin")),
+):
+    review_status = request.reviewStatus.strip().lower()
+    if review_status not in ("pending", "reviewed", "needs_rescan", "needs_tailor_review"):
+        raise HTTPException(status_code=400, detail="Invalid reviewStatus")
+    conn = _enterprise_connection()
+    try:
+        session = conn.execute(
+            "SELECT id, organization_id, status FROM measurement_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        _require_org_access(session["organization_id"], user)
+        reviewed_at = _enterprise_now() if review_status != "pending" else None
+        conn.execute(
+            """
+            UPDATE measurement_sessions
+            SET review_status = ?, tailor_notes = ?, reviewed_at = ?, reviewed_by_user_id = ?
+            WHERE id = ?
+            """,
+            (review_status, request.tailorNotes, reviewed_at, user.get("sub"), session_id),
+        )
+        _record_org_event(
+            conn,
+            session["organization_id"],
+            "session_review_updated",
+            {"sessionId": session_id, "reviewStatus": review_status},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "session_review_updated",
+            organization_id=session["organization_id"],
+            actor_user_id=user.get("sub"),
+            subject_type="measurement_session",
+            subject_id=session_id,
+            payload={"reviewStatus": review_status},
+        )
+        conn.commit()
+        return {
+            "sessionId": session_id,
+            "reviewStatus": review_status,
+            "reviewedAt": reviewed_at,
+        }
+    finally:
+        conn.close()
+
+
 @app.post("/v1/enterprise/organizations/{organization_id}/invite-links")
 async def create_invite_link(
     organization_id: str,
@@ -1767,9 +2727,9 @@ async def create_invite_link(
             """
             INSERT INTO invite_links (
                 id, organization_id, code, label, campaign_name, imprint, primary_color,
-                landing_headline, status, created_at
+                landing_headline, status, created_by_user_id, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
             """,
             (
                 invite_id,
@@ -1780,8 +2740,25 @@ async def create_invite_link(
                 request.imprint or organization["imprint"],
                 request.primaryColor or organization["primary_color"],
                 request.landingHeadline or f"Scan your measurements for {organization['brand_name']}",
+                user.get("sub"),
                 now,
             ),
+        )
+        _record_org_event(
+            conn,
+            organization_id,
+            "invite_link_created",
+            {"inviteId": invite_id, "code": invite_code, "label": request.label},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "invite_link_created",
+            organization_id=organization_id,
+            actor_user_id=user.get("sub"),
+            subject_type="invite_link",
+            subject_id=invite_id,
+            payload={"code": invite_code, "label": request.label},
         )
         conn.commit()
         return {
@@ -1828,6 +2805,12 @@ async def get_invite_link(invite_code: str):
                 "overageGraceScans": OVERAGE_GRACE_SCANS,
                 "canStartSession": _can_consume_scan(license_row),
             },
+            "measurementCatalog": {
+                "version": MEASUREMENT_CATALOG_VERSION,
+                "profiles": ["male", "female", "other"],
+                "requiredAngles": ["front", "side"],
+            },
+            "appLinks": _build_app_link_status(),
         }
     finally:
         conn.close()
@@ -1885,6 +2868,25 @@ async def start_enterprise_session(invite_code: str, request: EnterpriseSessionS
             """,
             (session_id, invite["organization_id"], customer_id, invite["id"], request.source, now),
         )
+        _record_org_event(
+            conn,
+            invite["organization_id"],
+            "session_started",
+            {
+                "sessionId": session_id,
+                "customerId": customer_id,
+                "customerEmail": customer_email,
+                "inviteCode": invite_code,
+            },
+        )
+        _record_audit_event(
+            conn,
+            "session_started",
+            organization_id=invite["organization_id"],
+            subject_type="measurement_session",
+            subject_id=session_id,
+            payload={"customerId": customer_id, "inviteCode": invite_code},
+        )
         conn.commit()
         return {
             "sessionId": session_id,
@@ -1914,16 +2916,51 @@ async def complete_enterprise_session(session_id: str, request: EnterpriseSessio
         if not _can_consume_scan(license_row):
             raise HTTPException(status_code=403, detail="Scan quota exhausted and overage grace limit reached")
 
+        unit = request.unit if request.unit in ("cm", "inch") else "cm"
+        measurements = _clean_numeric_payload(request.measurements)
+        confidence = _clean_numeric_payload(request.confidence, max_value=100.0)
+        warnings = _clean_warning_payload(request.warnings)
+        metadata = dict(request.metadata or {})
+        if request.measurementProfile:
+            metadata["measurementProfile"] = request.measurementProfile
+        metadata["measurementCount"] = len(measurements)
+        accuracy_status = _accuracy_status_from_session(
+            measurements,
+            confidence,
+            warnings,
+            request.measurementProfile,
+        )
+        metadata["catalogVersion"] = MEASUREMENT_CATALOG_VERSION
+        metadata["catalogCoverage"] = accuracy_status["coverage"]
+        metadata["accuracyStatus"] = accuracy_status["status"]
+        review_status = "needs_tailor_review" if accuracy_status["status"] != "ready_for_tailor" else "pending"
+
         conn.execute(
             """
             UPDATE measurement_sessions
-            SET status = 'completed', measurement_id = ?, accuracy_score = ?, metadata_json = ?, completed_at = ?
+            SET status = 'completed',
+                measurement_id = ?,
+                measurements_json = ?,
+                unit = ?,
+                measurement_profile = ?,
+                accuracy_score = ?,
+                confidence_json = ?,
+                warnings_json = ?,
+                review_status = ?,
+                metadata_json = ?,
+                completed_at = ?
             WHERE id = ?
             """,
             (
                 request.measurementId,
+                json.dumps(measurements, separators=(",", ":")),
+                unit,
+                request.measurementProfile,
                 request.accuracyScore,
-                str(request.metadata or {}),
+                json.dumps(confidence, separators=(",", ":")),
+                json.dumps(warnings, separators=(",", ":")),
+                review_status,
+                json.dumps(metadata, separators=(",", ":")),
                 now,
                 session_id,
             ),
@@ -1934,6 +2971,26 @@ async def complete_enterprise_session(session_id: str, request: EnterpriseSessio
         )
         refreshed_license = _get_license_for_org(conn, session["organization_id"])
         _sync_overage_record(conn, session["organization_id"], refreshed_license["id"], refreshed_license)
+        _record_org_event(
+            conn,
+            session["organization_id"],
+            "session_completed",
+            {
+                "sessionId": session_id,
+                "measurementId": request.measurementId,
+                "measurementCount": len(measurements),
+                "accuracyScore": request.accuracyScore,
+                "reviewStatus": review_status,
+            },
+        )
+        _record_audit_event(
+            conn,
+            "session_completed",
+            organization_id=session["organization_id"],
+            subject_type="measurement_session",
+            subject_id=session_id,
+            payload={"measurementId": request.measurementId, "measurementCount": len(measurements)},
+        )
         conn.commit()
         return {
             "sessionId": session_id,
@@ -1941,6 +2998,9 @@ async def complete_enterprise_session(session_id: str, request: EnterpriseSessio
             "scansUsed": refreshed_license["scans_used"],
             "remainingQuota": _remaining_quota(refreshed_license),
             "overageUnits": _overage_units(refreshed_license),
+            "measurementCount": len(measurements),
+            "reviewStatus": review_status,
+            "accuracyStatus": accuracy_status,
         }
     finally:
         conn.close()
@@ -1991,6 +3051,22 @@ async def create_billing_checkout(
                 now,
                 result["reference"],
             ),
+        )
+        _record_org_event(
+            conn,
+            request.organizationId,
+            "billing_checkout_created",
+            {"billingRecordId": record_id, "amount": request.amount, "currency": request.currency},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "billing_checkout_created",
+            organization_id=request.organizationId,
+            actor_user_id=user.get("sub"),
+            subject_type="billing_record",
+            subject_id=record_id,
+            payload={"amount": request.amount, "currency": request.currency},
         )
         conn.commit()
         return {
@@ -2070,13 +3146,16 @@ async def paystack_webhook(request: Request):
                 (customer_code, subscription_code, reference, reference),
             )
             target_license_id = license_id
+            target_org_id = org_id
             paid_quota: Optional[int] = None
             if reference:
                 row = conn.execute(
-                    "SELECT license_id, amount FROM billing_records WHERE paystack_reference=? OR external_reference=?",
+                    "SELECT organization_id, license_id, amount FROM billing_records WHERE paystack_reference=? OR external_reference=?",
                     (reference, reference),
                 ).fetchone()
                 if row:
+                    if not target_org_id:
+                        target_org_id = row["organization_id"]
                     if not target_license_id:
                         target_license_id = row["license_id"]
                     paid_quota = _paid_quota_from_amount(float(row["amount"] or 0))
@@ -2091,6 +3170,21 @@ async def paystack_webhook(request: Request):
                         "UPDATE licenses SET status='active', billing_interval='annual', ends_at=? WHERE id=?",
                         ((datetime.utcnow() + timedelta(days=365)).isoformat() + "Z", target_license_id),
                     )
+            if target_org_id:
+                _record_org_event(
+                    conn,
+                    target_org_id,
+                    "billing_payment_confirmed",
+                    {"reference": reference, "licenseId": target_license_id, "paidQuota": paid_quota},
+                )
+                _record_audit_event(
+                    conn,
+                    "billing_payment_confirmed",
+                    organization_id=target_org_id,
+                    subject_type="billing_record",
+                    subject_id=reference,
+                    payload={"licenseId": target_license_id, "paidQuota": paid_quota},
+                )
             conn.commit()
 
         elif event_type == "subscription.create":
@@ -2128,6 +3222,19 @@ async def paystack_webhook(request: Request):
                     "UPDATE licenses SET status='past_due' WHERE organization_id=? AND status='active'",
                     (target_org,),
                 )
+                _record_org_event(
+                    conn,
+                    target_org,
+                    "billing_payment_failed",
+                    {"subscriptionCode": sub_code},
+                )
+                _record_audit_event(
+                    conn,
+                    "billing_payment_failed",
+                    organization_id=target_org,
+                    subject_type="license",
+                    subject_id=sub_code,
+                )
                 conn.commit()
 
         elif event_type in ("subscription.disable", "subscription.not_renew"):
@@ -2144,6 +3251,20 @@ async def paystack_webhook(request: Request):
                 conn.execute(
                     "UPDATE licenses SET status='cancelled' WHERE organization_id=? AND status='active'",
                     (target_org,),
+                )
+                _record_org_event(
+                    conn,
+                    target_org,
+                    "billing_subscription_cancelled",
+                    {"subscriptionCode": sub_code, "event": event_type},
+                )
+                _record_audit_event(
+                    conn,
+                    "billing_subscription_cancelled",
+                    organization_id=target_org,
+                    subject_type="license",
+                    subject_id=sub_code,
+                    payload={"event": event_type},
                 )
                 conn.commit()
 
@@ -2312,6 +3433,22 @@ async def invite_staff(
             conn.execute(
                 "INSERT INTO organization_users (id, organization_id, name, email, role, status, created_at) VALUES (?,?,?,?,?,?,?)",
                 (uid, organization_id, request.name, request.email.strip().lower(), request.role, "active", now),
+            )
+            _record_org_event(
+                conn,
+                organization_id,
+                "staff_added",
+                {"userId": uid, "email": request.email.strip().lower(), "role": request.role},
+                user.get("sub"),
+            )
+            _record_audit_event(
+                conn,
+                "staff_added",
+                organization_id=organization_id,
+                actor_user_id=user.get("sub"),
+                subject_type="organization_user",
+                subject_id=uid,
+                payload={"email": request.email.strip().lower(), "role": request.role},
             )
             conn.commit()
         except sqlite3.IntegrityError:

@@ -30,6 +30,15 @@ import ScanStackNavigator from './ScanStackNavigator';
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
+const linking = {
+  prefixes: ['tailorxfit://', 'https://tailorxfit.com', 'https://www.tailorxfit.com'],
+  config: {
+    screens: {
+      EnterpriseInvite: 'invite/:inviteCode',
+    },
+  },
+};
+
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -82,7 +91,7 @@ export default function AppNavigator() {
 
   return (
     <ErrorBoundary>
-      <NavigationContainer>
+      <NavigationContainer linking={linking}>
         <RootStack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
           {isAuthenticated && isOnboarded ? (
             <>

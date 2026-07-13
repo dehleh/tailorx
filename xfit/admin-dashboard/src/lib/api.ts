@@ -30,6 +30,11 @@ export const fetchCurrentAdmin = (): Promise<{ data: { user: AdminUser | null } 
 export const getOrgDashboard = (orgId: string) =>
   api.get(`/v1/enterprise/organizations/${orgId}/dashboard`);
 
+export const getOrganizationEvents = (orgId: string, since?: string) =>
+  api.get(`/v1/enterprise/organizations/${orgId}/events`, {
+    params: since ? { since } : undefined,
+  });
+
 export const createInviteLink = (orgId: string, payload: {
   label: string;
   campaignName?: string;
@@ -39,6 +44,22 @@ export const createInviteLink = (orgId: string, payload: {
 
 export const inviteStaff = (orgId: string, payload: { name: string; email: string; role: string }) =>
   api.post(`/v1/enterprise/organizations/${orgId}/staff`, payload);
+
+export const reviewSession = (
+  sessionId: string,
+  payload: { reviewStatus: string; tailorNotes?: string },
+) => api.post(`/v1/enterprise/sessions/${sessionId}/review`, payload);
+
+export const createAccuracyBenchmark = (
+  orgId: string,
+  payload: {
+    measurementId?: string;
+    measurementProfile?: string;
+    scanMeasurements: Record<string, number>;
+    tapeMeasurements: Record<string, number>;
+    notes?: string;
+  },
+) => api.post(`/v1/enterprise/organizations/${orgId}/accuracy-benchmarks`, payload);
 
 // Billing
 export const createBillingCheckout = (payload: {

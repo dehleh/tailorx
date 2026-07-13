@@ -11,7 +11,7 @@ export type RootStackParamList = {
   PrivacyConsent: undefined;
   MainTabs: undefined;
   EnterpriseSetup: undefined;
-  EnterpriseInvite: undefined;
+  EnterpriseInvite: { inviteCode?: string } | undefined;
 };
 
 export type RootTabParamList = {

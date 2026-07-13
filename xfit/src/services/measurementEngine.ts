@@ -65,6 +65,8 @@ export interface MeasurementResult {
     calibrationMethod: string;
     processingTimeMs: number;
     engineVersion: string;
+    measurementCatalogVersion?: string;
+    measurementProfile?: 'male' | 'female' | 'other';
     contourUsed?: boolean;
     circumferenceSource?: string;
     missingRequiredAngles?: string[];
@@ -163,6 +165,11 @@ const ANTHROPOMETRIC_RATIOS = {
     topLengthToHeight: 0.25,    // Shoulder to hip
     bicepToHeight: 0.195,       // Upper arm circumference / height (34/174)
     elbowToHeight: 0.16,        // Elbow circumference / height (~28/174)
+    wristToHeight: 0.095,       // Wrist circumference / height
+    kneeToHeight: 0.215,        // Knee circumference / height
+    ankleToHeight: 0.125,       // Ankle circumference / height
+    riseToHeight: 0.155,        // Trouser rise / height
+    outseamToHeight: 0.595,     // Waist/hip to floor side length / height
   },
   female: {
     // ISO 8559 Female M: height=162, bust=88, underbust=72, waist=70, hips=94
@@ -183,6 +190,11 @@ const ANTHROPOMETRIC_RATIOS = {
     topLengthToHeight: 0.25,    // Shoulder to hip (~40/162)
     bicepToHeight: 0.185,       // Upper arm circumference / height (30/162)
     elbowToHeight: 0.15,        // Elbow circumference / height (~24/162)
+    wristToHeight: 0.092,       // Wrist circumference / height
+    kneeToHeight: 0.205,        // Knee circumference / height
+    ankleToHeight: 0.125,       // Ankle circumference / height
+    riseToHeight: 0.150,        // Trouser/skirt rise / height
+    outseamToHeight: 0.590,     // Waist/hip to floor side length / height
   },
   // Neutral average of male/female
   other: {
@@ -203,6 +215,11 @@ const ANTHROPOMETRIC_RATIOS = {
     topLengthToHeight: 0.25,
     bicepToHeight: 0.190,
     elbowToHeight: 0.155,
+    wristToHeight: 0.094,
+    kneeToHeight: 0.210,
+    ankleToHeight: 0.125,
+    riseToHeight: 0.153,
+    outseamToHeight: 0.592,
   },
 };
 
@@ -222,6 +239,11 @@ const RATIO_STDDEV = {
   underbustToHeight: 0.042, // Female: (86-64)/4/162 ≈ 0.034, Male ≈ chest → avg
   bicepToHeight: 0.023,    // Male: (38-30)/4/174 ≈ 0.012, Female: (34-26)/4/162 ≈ 0.012 → widened
   elbowToHeight: 0.018,    // conservative widening
+  wristToHeight: 0.012,
+  kneeToHeight: 0.020,
+  ankleToHeight: 0.014,
+  riseToHeight: 0.018,
+  outseamToHeight: 0.025,
 };
 
 // ============================================================
@@ -263,6 +285,11 @@ function buildPersonalizedRatios(
     { measurementKey: 'underbust', ratioKey: 'underbustToHeight' },
     { measurementKey: 'roundSleeveBicep', ratioKey: 'bicepToHeight' },
     { measurementKey: 'roundSleeveElbow', ratioKey: 'elbowToHeight' },
+    { measurementKey: 'wrist', ratioKey: 'wristToHeight' },
+    { measurementKey: 'knee', ratioKey: 'kneeToHeight' },
+    { measurementKey: 'ankle', ratioKey: 'ankleToHeight' },
+    { measurementKey: 'rise', ratioKey: 'riseToHeight' },
+    { measurementKey: 'outseam', ratioKey: 'outseamToHeight' },
   ];
 
   const personalized = { ...baseRatios };
@@ -428,6 +455,9 @@ class MeasurementEngine {
       shoulders: frontMeasurements.shoulderWidth,
       sleeve: frontMeasurements.sleeveLength,
       inseam: frontMeasurements.inseam,
+      outseam: frontMeasurements.outseam,
+      frontWidth: frontMeasurements.frontWidth,
+      backWidth: frontMeasurements.backWidth,
       ...circumferences,
     };
 
@@ -438,13 +468,24 @@ class MeasurementEngine {
     const genderRatiosStep6 = this.getActiveRatios(gender);
 
     // Arm measurements (useful for shirt/blouse fitting regardless of gender)
+    rawMeasurements.armLength = this.round(effectiveHeight * genderRatiosStep6.armLengthToHeight);
     rawMeasurements.roundSleeveBicep = this.round(effectiveHeight * genderRatiosStep6.bicepToHeight);
     rawMeasurements.roundSleeveElbow = this.round(effectiveHeight * genderRatiosStep6.elbowToHeight);
+    rawMeasurements.wrist = this.round(effectiveHeight * genderRatiosStep6.wristToHeight);
+    rawMeasurements.knee = this.round(effectiveHeight * genderRatiosStep6.kneeToHeight);
+    rawMeasurements.ankle = this.round(effectiveHeight * genderRatiosStep6.ankleToHeight);
+    rawMeasurements.rise = this.round(effectiveHeight * genderRatiosStep6.riseToHeight);
+    rawMeasurements.topLength = frontMeasurements.topLength;
 
     // Female-specific garment length measurements
     if (gender === 'female') {
       rawMeasurements.halfLength = frontMeasurements.halfLength;
-      rawMeasurements.topLength = frontMeasurements.topLength;
+      if (rawMeasurements.chest > 0) {
+        rawMeasurements.bust = rawMeasurements.chest;
+      }
+      if (rawMeasurements.bust > 0 && rawMeasurements.underbust > 0) {
+        rawMeasurements.cupDifference = this.round(rawMeasurements.bust - rawMeasurements.underbust);
+      }
     }
 
     if (SHOULD_LOG_MEASUREMENT_ENGINE) {
@@ -513,7 +554,7 @@ class MeasurementEngine {
       if (rawVal && rawVal > 0) {
         const ratio = anchorMeasurement.valueCm / rawVal;
         // Apply proportional correction to related circumference measurements
-        const circumKeys = ['chest', 'underbust', 'waist', 'hips', 'neck', 'thigh', 'calf', 'roundSleeveBicep', 'roundSleeveElbow'];
+        const circumKeys = ['chest', 'bust', 'underbust', 'waist', 'hips', 'neck', 'thigh', 'knee', 'calf', 'ankle', 'wrist', 'roundSleeveBicep', 'roundSleeveElbow'];
         if (circumKeys.includes(anchorMeasurement.key)) {
           // Anchor affects all circumferences proportionally (same cross-section error)
           for (const ck of circumKeys) {
@@ -567,6 +608,8 @@ class MeasurementEngine {
           : 'estimated',
         processingTimeMs,
         engineVersion: this.engineVersion,
+        measurementCatalogVersion: 'tailorx-iso8559-1-v1',
+        measurementProfile: gender,
         contourUsed: !!(contourData?.front || contourData?.side),
         circumferenceSource,
         missingRequiredAngles,
@@ -807,6 +850,16 @@ class MeasurementEngine {
     // TOP LENGTH: shoulder to hip (full garment torso length)
     const topLength = this.round(torsoPixels * scaleFactor);
 
+    // OUTSEAM: side waist/hip line to ankle. Hip landmark is below the true waist,
+    // so add a small torso allowance to approximate tailor outseam.
+    const leftOutseamPixels = this.distance2D(px(leftHip), px(leftAnkle)) + torsoPixels * 0.22;
+    const rightOutseamPixels = this.distance2D(px(rightHip), px(rightAnkle)) + torsoPixels * 0.22;
+    const outseam = this.round(((leftOutseamPixels + rightOutseamPixels) / 2) * scaleFactor);
+
+    // FRONT/BACK WIDTH: useful tailor widths derived from shoulder span.
+    const frontWidth = this.round(shoulderWidth * 0.84);
+    const backWidth = this.round(shoulderWidth * 0.9);
+
     // FRONT WIDTHS (for circumference calculation)
     const chestFrontWidth = this.distance2D(px(leftShoulder), px(rightShoulder)) * 0.95;
     const waistFrontWidth = this.distance2D(px(leftHip), px(rightHip)) * 1.1;
@@ -832,6 +885,9 @@ class MeasurementEngine {
       inseam,
       halfLength,
       topLength,
+      outseam,
+      frontWidth,
+      backWidth,
       // Front widths in pixels (for circumference calc)
       frontWidths: {
         chest: chestFrontWidth * scaleFactor,
@@ -1185,11 +1241,17 @@ class MeasurementEngine {
       { key: 'shoulders', ratioKey: 'shoulderToHeight', stdDevKey: 'shoulderToHeight' },
       { key: 'neck', ratioKey: 'neckToHeight', stdDevKey: 'neckToHeight' },
       { key: 'sleeve', ratioKey: 'sleeveToHeight', stdDevKey: 'sleeveToHeight' },
+      { key: 'armLength', ratioKey: 'armLengthToHeight' },
       { key: 'inseam', ratioKey: 'inseamToHeight', stdDevKey: 'inseamToHeight' },
+      { key: 'outseam', ratioKey: 'outseamToHeight', stdDevKey: 'outseamToHeight' },
+      { key: 'rise', ratioKey: 'riseToHeight', stdDevKey: 'riseToHeight' },
       { key: 'thigh', ratioKey: 'thighToHeight', stdDevKey: 'thighToHeight' },
+      { key: 'knee', ratioKey: 'kneeToHeight', stdDevKey: 'kneeToHeight' },
       { key: 'calf', ratioKey: 'calfToHeight', stdDevKey: 'calfToHeight' },
+      { key: 'ankle', ratioKey: 'ankleToHeight', stdDevKey: 'ankleToHeight' },
       { key: 'roundSleeveBicep', ratioKey: 'bicepToHeight', stdDevKey: 'bicepToHeight' },
       { key: 'roundSleeveElbow', ratioKey: 'elbowToHeight', stdDevKey: 'elbowToHeight' },
+      { key: 'wrist', ratioKey: 'wristToHeight', stdDevKey: 'wristToHeight' },
     ];
 
     for (const check of checks) {
@@ -1279,18 +1341,28 @@ class MeasurementEngine {
       { key: 'height', ratioKey: null, needsSideView: false, inherentDifficulty: 0.05 },
       { key: 'shoulders', ratioKey: 'shoulderToHeight', needsSideView: false, inherentDifficulty: 0.1 },
       { key: 'sleeve', ratioKey: 'sleeveToHeight', needsSideView: false, inherentDifficulty: 0.15 },
+      { key: 'armLength', ratioKey: 'armLengthToHeight', needsSideView: false, inherentDifficulty: 0.16 },
       { key: 'inseam', ratioKey: 'inseamToHeight', needsSideView: false, inherentDifficulty: 0.2 },
+      { key: 'outseam', ratioKey: 'outseamToHeight', needsSideView: false, inherentDifficulty: 0.18 },
+      { key: 'rise', ratioKey: 'riseToHeight', needsSideView: false, inherentDifficulty: 0.28 },
+      { key: 'frontWidth', ratioKey: null, needsSideView: false, inherentDifficulty: 0.18 },
+      { key: 'backWidth', ratioKey: null, needsSideView: false, inherentDifficulty: 0.18 },
       { key: 'halfLength', ratioKey: 'halfLengthToHeight', needsSideView: false, inherentDifficulty: 0.15 },
       { key: 'topLength', ratioKey: 'topLengthToHeight', needsSideView: false, inherentDifficulty: 0.15 },
       { key: 'chest', ratioKey: 'chestToHeight', needsSideView: true, inherentDifficulty: 0.2 },
+      { key: 'bust', ratioKey: 'chestToHeight', needsSideView: true, inherentDifficulty: 0.22 },
       { key: 'underbust', ratioKey: 'underbustToHeight', needsSideView: true, inherentDifficulty: 0.25 },
+      { key: 'cupDifference', ratioKey: null, needsSideView: true, inherentDifficulty: 0.35 },
       { key: 'waist', ratioKey: 'waistToHeight', needsSideView: true, inherentDifficulty: 0.2 },
       { key: 'hips', ratioKey: 'hipsToHeight', needsSideView: true, inherentDifficulty: 0.2 },
       { key: 'neck', ratioKey: 'neckToHeight', needsSideView: true, inherentDifficulty: 0.3 },
       { key: 'thigh', ratioKey: 'thighToHeight', needsSideView: true, inherentDifficulty: 0.3 },
+      { key: 'knee', ratioKey: 'kneeToHeight', needsSideView: false, inherentDifficulty: 0.32 },
       { key: 'calf', ratioKey: 'calfToHeight', needsSideView: true, inherentDifficulty: 0.35 },
+      { key: 'ankle', ratioKey: 'ankleToHeight', needsSideView: false, inherentDifficulty: 0.32 },
       { key: 'roundSleeveBicep', ratioKey: 'bicepToHeight', needsSideView: false, inherentDifficulty: 0.35 },
       { key: 'roundSleeveElbow', ratioKey: 'elbowToHeight', needsSideView: false, inherentDifficulty: 0.35 },
+      { key: 'wrist', ratioKey: 'wristToHeight', needsSideView: false, inherentDifficulty: 0.32 },
     ];
 
     for (const config of measurementConfigs) {
@@ -1888,6 +1960,8 @@ class MeasurementEngine {
         'anchor_calibration',
         'exif_lens_calibration',
         'clothing_compensation',
+        'expanded_tailor_measurement_catalog',
+        'female_profile_bust_underbust',
       ],
       supportedAngles: ['front', 'side', 'back'],
       supportedCalibration: ['credit_card', 'a4_paper', 'known_height', 'ruler', 'aruco_marker'],
@@ -1897,6 +1971,7 @@ class MeasurementEngine {
         withCalibrationFrontOnly: 'moderate confidence; validation required',
         withoutCalibration: 'estimate only; validation required',
       },
+      measurementCatalogVersion: 'tailorx-iso8559-1-v1',
     };
   }
 }

@@ -23,6 +23,13 @@
   flex-wrap: wrap;
 }
 
+.headerActions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .orgName {
   font-size: 1.6rem;
   font-weight: 800;
@@ -68,6 +75,22 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.5rem;
+}
+
+.twoColumn {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
 }
 
 .sectionTitle {
@@ -180,7 +203,230 @@
   opacity: 0.6;
 }
 
+.btnSecondary {
+  background: #fff;
+  color: var(--brand);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.btnSecondary:disabled {
+  opacity: 0.6;
+}
+
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
 .msg {
   margin-top: 0.5rem;
   font-size: 0.85rem;
+}
+
+.profilePill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(15, 43, 60, 0.08);
+  color: var(--brand);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.measurementChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 260px;
+}
+
+.measurementChip {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  border-radius: 6px;
+  background: #f4f8f8;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.78rem;
+  padding: 0.25rem 0.45rem;
+  white-space: nowrap;
+}
+
+.measurementChip strong {
+  color: var(--brand);
+}
+
+.emptyMeasurement {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.insightGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.compactValue {
+  color: var(--brand);
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin-top: 0.15rem;
+}
+
+.compactValueSmall {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.mutedLine {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  margin: 0.55rem 0;
+}
+
+.mutedSmall {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.livePill,
+.goodPill,
+.warnPill,
+.badPill,
+.neutralPill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.35rem 0.6rem;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.livePill {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+}
+
+.goodPill {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+}
+
+.warnPill {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--warning);
+}
+
+.badPill {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+}
+
+.neutralPill {
+  background: rgba(15, 43, 60, 0.08);
+  color: var(--brand);
+}
+
+.goodText {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.badText {
+  color: var(--error);
+  font-weight: 700;
+}
+
+.link {
+  color: var(--brand);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.emptyCell {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.activeRow td {
+  background: rgba(15, 43, 60, 0.05);
+}
+
+.stackList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.stackList span {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.78rem;
+  padding: 0.3rem 0.45rem;
+  background: #fff;
+}
+
+.warningBox {
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+}
+
+.warningBox p + p {
+  margin-top: 0.35rem;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 92px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  margin-top: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  resize: vertical;
+}
+
+.textarea:focus {
+  border-color: var(--brand);
+  outline: none;
+}
+
+@media (max-width: 720px) {
+  .main {
+    padding: 1.25rem 1rem;
+  }
+
+  .section {
+    padding: 1rem;
+  }
 }

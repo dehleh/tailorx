@@ -2,6 +2,7 @@
   "expo": {
     "name": "Tailor-X",
     "slug": "tailor-x",
+    "scheme": "tailorxfit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/brand-icon.png",
@@ -14,6 +15,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tailorx.app",
+      "associatedDomains": [
+        "applinks:tailorxfit.com",
+        "applinks:www.tailorxfit.com"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "Tailor-X needs camera access to scan your body for accurate measurements.",
         "NSPhotoLibraryUsageDescription": "Tailor-X needs photo library access to save and retrieve measurement photos."
@@ -28,10 +33,29 @@
       "permissions": [
         "CAMERA",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "CAMERA",
-        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "tailorxfit.com",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "www.tailorxfit.com",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "web": {

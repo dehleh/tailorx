@@ -14,39 +14,47 @@ import { enterpriseApi } from '../services/enterpriseApi';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { InviteLookupResponse } from '../types/enterprise';
 
-export default function EnterpriseInviteScreen({ navigation }: any) {
+export default function EnterpriseInviteScreen({ navigation, route }: any) {
   const activeInviteCode = useEnterpriseStore((state) => state.activeInviteCode);
   const setActiveInvite = useEnterpriseStore((state) => state.setActiveInvite);
   const setActiveSession = useEnterpriseStore((state) => state.setActiveSession);
-  const [inviteCode, setInviteCode] = useState(activeInviteCode || '');
+  const routeInviteCode = route?.params?.inviteCode;
+  const [inviteCode, setInviteCode] = useState(routeInviteCode || activeInviteCode || '');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [invite, setInvite] = useState<InviteLookupResponse | null>(null);
   const [isLoadingInvite, setIsLoadingInvite] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
 
-  useEffect(() => {
-    if (activeInviteCode) {
-      setInviteCode(activeInviteCode);
-    }
-  }, [activeInviteCode]);
-
-  const loadInvite = async () => {
-    if (!inviteCode.trim()) {
+  const loadInvite = async (codeOverride?: string) => {
+    const code = (codeOverride || inviteCode).trim();
+    if (!code) {
       Alert.alert('Invite required', 'Paste or enter a branded invite code first.');
       return;
     }
     setIsLoadingInvite(true);
     try {
-      const data = await enterpriseApi.getInvite(inviteCode.trim());
+      const data = await enterpriseApi.getInvite(code);
       setInvite(data);
-      await setActiveInvite(inviteCode.trim(), data.organization.brandName);
+      setInviteCode(code);
+      await setActiveInvite(code, data.organization.brandName);
     } catch (error: any) {
       Alert.alert('Invite not found', error?.response?.data?.detail || 'Could not load the branded invite.');
     } finally {
       setIsLoadingInvite(false);
     }
   };
+
+  useEffect(() => {
+    if (routeInviteCode) {
+      setInviteCode(routeInviteCode);
+      loadInvite(routeInviteCode);
+    } else if (activeInviteCode) {
+      setInviteCode(activeInviteCode);
+    }
+    // loadInvite intentionally not included; this effect should only react to incoming links.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeInviteCode, routeInviteCode]);
 
   const startSession = async () => {
     if (!invite) {
@@ -95,7 +103,7 @@ export default function EnterpriseInviteScreen({ navigation }: any) {
 
       <Text style={styles.label}>Invite code</Text>
       <TextInput style={styles.input} value={inviteCode} onChangeText={setInviteCode} autoCapitalize="none" />
-      <TouchableOpacity style={styles.secondaryButton} onPress={loadInvite} disabled={isLoadingInvite}>
+      <TouchableOpacity style={styles.secondaryButton} onPress={() => loadInvite()} disabled={isLoadingInvite}>
         <Text style={styles.secondaryButtonText}>{isLoadingInvite ? 'Loading invite...' : 'Load branded invite'}</Text>
       </TouchableOpacity>
 
