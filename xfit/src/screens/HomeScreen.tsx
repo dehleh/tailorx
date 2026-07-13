@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Colors } from '../constants/colors';
+import BrandLogo from '../components/BrandLogo';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
@@ -19,6 +20,7 @@ export default function HomeScreen({ navigation }: any) {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
+          <BrandLogo style={styles.headerLogo} />
           <Text style={styles.greeting}>{displayName}</Text>
           <Text style={styles.subGreeting}>Ready to get your perfect fit?</Text>
         </View>
@@ -144,6 +146,11 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flex: 1,
+  },
+  headerLogo: {
+    width: 142,
+    height: 34,
+    marginBottom: 14,
   },
   greeting: {
     fontSize: 22,

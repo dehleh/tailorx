@@ -57,6 +57,11 @@ export default function LoginPage() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.logo}>
+          <img
+            src="/brand/txfit-full-colour.png"
+            alt="Tailor-Xfit Admin"
+            className={styles.logoImage}
+          />
           <span className={styles.logoIcon}>✂</span>
           <span className={styles.logoText}>Tailor-X Admin</span>
         </div>

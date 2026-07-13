@@ -4,6 +4,7 @@ import {
   ScrollView, Dimensions, NativeScrollEvent, NativeSyntheticEvent,
 } from 'react-native';
 import { Colors } from '../constants/colors';
+import BrandLogo from '../components/BrandLogo';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -53,7 +54,7 @@ export default function GettingStartedScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Getting started</Text>
+        <BrandLogo style={styles.headerLogo} />
         <TouchableOpacity onPress={handleSkip}>
           <Text style={styles.skipText}>Skip</Text>
         </TouchableOpacity>
@@ -115,6 +116,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: Colors.text.primary,
+  },
+  headerLogo: {
+    width: 142,
+    height: 34,
   },
   skipText: {
     fontSize: 15,

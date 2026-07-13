@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Linking } from 'react-native';
 import { Colors } from '../constants/colors';
 import { useAuthStore } from '../stores/authStore';
+import BrandLogo from '../components/BrandLogo';
 
 const PRIVACY_POLICY_URL = 'https://tailorxfit.com/privacy';
 
@@ -39,7 +40,7 @@ export default function PrivacyConsentScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Getting started</Text>
+        <BrandLogo style={styles.headerLogo} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -102,6 +103,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: Colors.text.primary,
+  },
+  headerLogo: {
+    width: 142,
+    height: 34,
   },
   content: {
     paddingHorizontal: 24,

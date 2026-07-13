@@ -4,10 +4,10 @@
     "slug": "tailor-x",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/brand-icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/brand-splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0B1D2E"
     },
@@ -21,7 +21,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/brand-adaptive-icon.png",
         "backgroundColor": "#0B1D2E"
       },
       "package": "com.tailorx.app",
@@ -35,7 +35,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/brand-favicon.png"
     },
     "plugins": [
       [

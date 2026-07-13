@@ -13,12 +13,13 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
   margin-right: 1rem;
+  min-width: 150px;
 }
 
-.icon { color: var(--accent); font-size: 1.2rem; }
-.name { color: #fff; font-weight: 700; font-size: 1rem; white-space: nowrap; }
+.logoImage { width: 142px; height: auto; display: block; }
+.icon { display: none; color: var(--accent); font-size: 1.2rem; }
+.name { display: none; color: #fff; font-weight: 700; font-size: 1rem; white-space: nowrap; }
 
 .links { display: flex; gap: 1rem; flex: 1; }
 

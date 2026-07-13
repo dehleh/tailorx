@@ -18,6 +18,10 @@ export const metadata: Metadata = {
     'body measurement', 'AI tailoring', 'sizing', 'fashion tech',
     'fit technology', 'returns reduction', 'made-to-measure', 'pose estimation',
   ],
+  icons: {
+    icon: '/brand/icon.png',
+    apple: '/brand/icon.png',
+  },
   openGraph: {
     type: 'website',
     title: 'Tailor-X - Guided body measurements for fit pilots',

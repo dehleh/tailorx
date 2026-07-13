@@ -1,3 +1,5 @@
+import BrandLogo from './BrandLogo';
+
 export default function Hero() {
   return (
     <section id="top" className="gradient-bg relative overflow-hidden">
@@ -52,7 +54,8 @@ export default function Hero() {
                 <span>9:41</span>
                 <span>●●●●●</span>
               </div>
-              <div className="mt-6 text-xs uppercase tracking-widest text-accent">Scan</div>
+              <BrandLogo variant="white" className="mt-5 h-8 w-auto self-start" />
+              <div className="mt-5 text-xs uppercase tracking-widest text-accent">Scan</div>
               <h3 className="mt-1 text-lg font-semibold">Stand here</h3>
               <div className="mt-4 flex flex-1 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 to-transparent">
                 <svg viewBox="0 0 80 160" className="h-48 w-auto text-accent/80">

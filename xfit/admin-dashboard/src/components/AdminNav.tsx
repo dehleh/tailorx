@@ -17,6 +17,11 @@ export default function AdminNav() {
   return (
     <nav className={styles.nav}>
       <div className={styles.brand}>
+        <img
+          src="/brand/txfit-full-white.png"
+          alt="Tailor-Xfit Admin"
+          className={styles.logoImage}
+        />
         <span className={styles.icon}>✂</span>
         <span className={styles.name}>Tailor-X Admin</span>
       </div>

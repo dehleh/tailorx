@@ -1,13 +1,12 @@
+import BrandLogo from './BrandLogo';
+
 export default function Footer() {
   const adminUrl = process.env.NEXT_PUBLIC_ADMIN_URL || 'https://tailorx-admin-production.up.railway.app';
   return (
     <footer className="border-t border-mist bg-white">
       <div className="mx-auto grid max-w-7xl gap-10 px-6 py-16 md:grid-cols-5">
         <div className="md:col-span-2">
-          <div className="flex items-center gap-2 font-display text-xl font-bold text-ink">
-            <span className="inline-block h-7 w-7 rounded-md bg-gradient-to-br from-accent to-ink" aria-hidden />
-            Tailor-X
-          </div>
+          <BrandLogo className="h-11 w-auto" />
           <p className="mt-4 max-w-xs text-sm text-slate1">
             AI-powered body measurement for brands, tailors, and fitness studios.
           </p>

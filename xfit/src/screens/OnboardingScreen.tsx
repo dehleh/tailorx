@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
 import { Colors } from '../constants/colors';
+import BrandLogo from '../components/BrandLogo';
 
 const features = [
   {
@@ -26,6 +27,7 @@ export default function OnboardingScreen({ navigation }: any) {
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.logoRow}>
+            <BrandLogo style={styles.logoImage} />
             <View style={styles.logoIcon}>
               <Text style={styles.logoEmoji}>📏</Text>
             </View>
@@ -86,7 +88,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
+  logoImage: {
+    width: 172,
+    height: 42,
+  },
   logoIcon: {
+    display: 'none',
     width: 36,
     height: 36,
     borderRadius: 10,
@@ -99,6 +106,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   logoText: {
+    display: 'none',
     fontSize: 18,
     fontWeight: '700',
     color: Colors.text.primary,

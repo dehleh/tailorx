@@ -4,6 +4,7 @@ import {
   SafeAreaView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { Colors } from '../constants/colors';
+import BrandLogo from '../components/BrandLogo';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tailorx-pose-api-production.up.railway.app';
 
@@ -54,6 +55,7 @@ export default function EmailAuthScreen({ navigation }: any) {
         </View>
 
         <View style={styles.content}>
+          <BrandLogo style={styles.logoImage} />
           <View style={styles.iconCircle}>
             <Text style={styles.icon}>✉️</Text>
           </View>
@@ -123,7 +125,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 24,
   },
+  logoImage: {
+    width: 176,
+    height: 42,
+    marginBottom: 28,
+  },
   iconCircle: {
+    display: 'none',
     width: 56,
     height: 56,
     borderRadius: 16,

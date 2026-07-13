@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
+import BrandLogo from './BrandLogo';
 
 export default function Nav() {
   const [open, setOpen] = useState(false);
@@ -8,9 +9,8 @@ export default function Nav() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-mist/60 bg-white/80 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-        <Link href="#top" className="flex items-center gap-2 font-display text-xl font-bold text-ink">
-          <span className="inline-block h-7 w-7 rounded-md bg-gradient-to-br from-accent to-ink" aria-hidden />
-          Tailor-X
+        <Link href="#top" className="flex items-center" aria-label="Tailor-Xfit home">
+          <BrandLogo className="h-10 w-auto" />
         </Link>
         <nav className="hidden items-center gap-8 text-sm text-slate1 md:flex">
           <a href="#features" className="hover:text-ink">Features</a>
