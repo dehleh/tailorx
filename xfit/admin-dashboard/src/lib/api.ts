@@ -75,6 +75,24 @@ export const createBillingCheckout = (payload: {
 export const getSuperAdminDashboard = () =>
   api.get('/v1/enterprise/super-admin/dashboard');
 
+export const getSuperAdminOrganization = (organizationId: string) =>
+  api.get(`/v1/enterprise/super-admin/organizations/${organizationId}`);
+
+export const updateSuperAdminLicense = (
+  organizationId: string,
+  payload: {
+    seats: number;
+    scanQuota: number;
+    amount?: number;
+    currency?: string;
+  },
+) => api.patch(`/v1/enterprise/super-admin/organizations/${organizationId}/license`, payload);
+
+export const resetSuperAdminOwnerAccess = (
+  organizationId: string,
+  payload: { ownerUserId?: string; sendOtp?: boolean } = {},
+) => api.post(`/v1/enterprise/super-admin/organizations/${organizationId}/owner-access`, payload);
+
 export interface BootstrapOrgPayload {
   organizationName: string;
   adminName: string;
@@ -107,6 +125,9 @@ export const suspendOrganization = (organizationId: string) =>
 
 export const activateOrganization = (organizationId: string) =>
   api.post(`/v1/enterprise/super-admin/organizations/${organizationId}/activate`);
+
+export const archiveOrganization = (organizationId: string) =>
+  api.post(`/v1/enterprise/super-admin/organizations/${organizationId}/archive`);
 
 export const deleteOrganization = (organizationId: string) =>
   api.delete(`/v1/enterprise/super-admin/organizations/${organizationId}`);

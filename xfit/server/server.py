@@ -623,6 +623,18 @@ class BillingCheckoutRequest(BaseModel):
     planTier: str = "growth"   # starter | growth | enterprise
 
 
+class SuperAdminLicenseUpdateRequest(BaseModel):
+    seats: int = Field(ge=1, le=100000)
+    scanQuota: int = Field(ge=1, le=10_000_000)
+    amount: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=8)
+
+
+class SuperAdminOwnerAccessResetRequest(BaseModel):
+    ownerUserId: Optional[str] = None
+    sendOtp: bool = True
+
+
 class AdminLoginRequest(BaseModel):
     email: EmailStr
 
@@ -3467,6 +3479,15 @@ async def get_super_admin_dashboard(
         organization_count = conn.execute(
             "SELECT COUNT(*) AS count FROM organizations"
         ).fetchone()["count"]
+        active_organization_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM organizations WHERE status = 'active'"
+        ).fetchone()["count"]
+        suspended_organization_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM organizations WHERE status = 'suspended'"
+        ).fetchone()["count"]
+        archived_organization_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM organizations WHERE status = 'archived'"
+        ).fetchone()["count"]
         active_license_count = conn.execute(
             "SELECT COUNT(*) AS count FROM licenses WHERE status = 'active'"
         ).fetchone()["count"]
@@ -3479,26 +3500,363 @@ async def get_super_admin_dashboard(
         monthly_revenue = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) AS total FROM billing_records WHERE status IN ('pending', 'paid')"
         ).fetchone()["total"]
+        revenue_by_currency = conn.execute(
+            """
+            SELECT currency, COALESCE(SUM(amount), 0) AS amount, COUNT(*) AS records
+            FROM billing_records
+            WHERE status IN ('pending', 'paid')
+            GROUP BY currency
+            ORDER BY amount DESC
+            """
+        ).fetchall()
+        session_stats = conn.execute(
+            """
+            SELECT
+              COUNT(*) AS total,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+              SUM(CASE WHEN status = 'completed' AND review_status != 'reviewed' THEN 1 ELSE 0 END) AS review_backlog
+            FROM measurement_sessions
+            """
+        ).fetchone()
         organizations = conn.execute(
             """
             SELECT o.id, o.name, o.slug, o.brand_name, o.status, o.created_at,
-                   l.seats_purchased, l.scan_quota, l.scans_used, l.amount, l.currency
+                   COALESCE(l.seats_purchased, 0) AS seats_purchased,
+                   COALESCE(l.scan_quota, 0) AS scan_quota,
+                   COALESCE(l.scans_used, 0) AS scans_used,
+                   COALESCE(l.amount, 0) AS amount,
+                   COALESCE(l.currency, '') AS currency,
+                   COALESCE(l.status, 'none') AS license_status,
+                   (
+                     SELECT u.email
+                     FROM organization_users u
+                     WHERE u.organization_id = o.id AND u.role = 'org_owner'
+                     ORDER BY u.created_at ASC
+                     LIMIT 1
+                   ) AS owner_email,
+                   (
+                     SELECT COUNT(*)
+                     FROM measurement_sessions ms
+                     WHERE ms.organization_id = o.id
+                   ) AS session_count,
+                   (
+                     SELECT COUNT(*)
+                     FROM measurement_sessions ms
+                     WHERE ms.organization_id = o.id AND ms.status = 'completed'
+                   ) AS completed_session_count,
+                   (
+                     SELECT COUNT(*)
+                     FROM measurement_sessions ms
+                     WHERE ms.organization_id = o.id AND ms.status = 'completed' AND ms.review_status != 'reviewed'
+                   ) AS review_backlog,
+                   (
+                     SELECT br.status
+                     FROM billing_records br
+                     WHERE br.organization_id = o.id
+                     ORDER BY br.created_at DESC
+                     LIMIT 1
+                   ) AS billing_status
             FROM organizations o
             LEFT JOIN licenses l ON l.organization_id = o.id
             ORDER BY o.created_at DESC
-            LIMIT 20
+            LIMIT 200
             """
         ).fetchall()
         return {
             "summary": {
                 "organizationCount": organization_count,
+                "activeOrganizationCount": active_organization_count,
+                "suspendedOrganizationCount": suspended_organization_count,
+                "archivedOrganizationCount": archived_organization_count,
                 "activeLicenseCount": active_license_count,
                 "totalScanQuota": total_quota,
                 "totalScansUsed": total_used,
                 "utilizationRate": round((total_used / total_quota) * 100, 2) if total_quota else 0,
                 "bookedRevenue": monthly_revenue,
+                "revenueByCurrency": [dict(row) for row in revenue_by_currency],
+                "totalSessions": int(session_stats["total"] or 0),
+                "completedSessions": int(session_stats["completed"] or 0),
+                "failedSessions": int(session_stats["failed"] or 0),
+                "reviewBacklog": int(session_stats["review_backlog"] or 0),
+                "apiStatus": "online",
+                "databaseStatus": "online",
+                "generatedAt": _enterprise_now(),
             },
             "organizations": [dict(row) for row in organizations],
+        }
+    finally:
+        conn.close()
+
+
+def _serialize_super_admin_org_detail(conn: sqlite3.Connection, organization_id: str) -> dict[str, Any]:
+    organization = conn.execute(
+        "SELECT * FROM organizations WHERE id = ?",
+        (organization_id,),
+    ).fetchone()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    license_row = conn.execute(
+        "SELECT * FROM licenses WHERE organization_id = ? ORDER BY created_at DESC LIMIT 1",
+        (organization_id,),
+    ).fetchone()
+    owner = conn.execute(
+        """
+        SELECT id, name, email, role, status, created_at
+        FROM organization_users
+        WHERE organization_id = ? AND role = 'org_owner'
+        ORDER BY created_at ASC
+        LIMIT 1
+        """,
+        (organization_id,),
+    ).fetchone()
+    users = conn.execute(
+        """
+        SELECT id, name, email, role, status, created_at
+        FROM organization_users
+        WHERE organization_id = ?
+        ORDER BY role ASC, created_at ASC
+        LIMIT 20
+        """,
+        (organization_id,),
+    ).fetchall()
+    billing_records = conn.execute(
+        """
+        SELECT id, amount, currency, status, billing_interval, checkout_url,
+               paystack_reference, external_reference, created_at
+        FROM billing_records
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 12
+        """,
+        (organization_id,),
+    ).fetchall()
+    recent_sessions = conn.execute(
+        """
+        SELECT ms.id, ms.status, ms.review_status, ms.accuracy_score,
+               ms.measurement_id, ms.measurement_profile, ms.started_at, ms.completed_at,
+               c.full_name AS customer_name, c.email AS customer_email
+        FROM measurement_sessions ms
+        JOIN customers c ON c.id = ms.customer_id
+        WHERE ms.organization_id = ?
+        ORDER BY ms.started_at DESC
+        LIMIT 12
+        """,
+        (organization_id,),
+    ).fetchall()
+    invite_links = conn.execute(
+        """
+        SELECT id, code, label, campaign_name, status, created_at
+        FROM invite_links
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 12
+        """,
+        (organization_id,),
+    ).fetchall()
+    events = conn.execute(
+        """
+        SELECT id, event_type, payload_json, actor_user_id, created_at
+        FROM org_events
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 16
+        """,
+        (organization_id,),
+    ).fetchall()
+    audit_logs = conn.execute(
+        """
+        SELECT id, action, subject_type, subject_id, payload_json, created_at
+        FROM audit_logs
+        WHERE organization_id = ?
+        ORDER BY created_at DESC
+        LIMIT 16
+        """,
+        (organization_id,),
+    ).fetchall()
+    stats = conn.execute(
+        """
+        SELECT
+          (SELECT COUNT(*) FROM organization_users WHERE organization_id = ?) AS user_count,
+          (SELECT COUNT(*) FROM customers WHERE organization_id = ?) AS customer_count,
+          (SELECT COUNT(*) FROM measurement_sessions WHERE organization_id = ?) AS session_count,
+          (SELECT COUNT(*) FROM measurement_sessions WHERE organization_id = ? AND status = 'completed') AS completed_session_count,
+          (SELECT COUNT(*) FROM measurement_sessions WHERE organization_id = ? AND status = 'completed' AND review_status != 'reviewed') AS review_backlog
+        """,
+        (organization_id, organization_id, organization_id, organization_id, organization_id),
+    ).fetchone()
+
+    def parse_payload(row: sqlite3.Row) -> dict[str, Any]:
+        payload = dict(row)
+        if "payload_json" in payload:
+            payload["payload"] = _json_or_default(payload.pop("payload_json"), {})
+        return payload
+
+    return {
+        "organization": dict(organization),
+        "license": dict(license_row) if license_row else None,
+        "owner": dict(owner) if owner else None,
+        "users": [dict(row) for row in users],
+        "billingRecords": [dict(row) for row in billing_records],
+        "recentSessions": [dict(row) for row in recent_sessions],
+        "inviteLinks": [dict(row) for row in invite_links],
+        "events": [parse_payload(row) for row in events],
+        "auditLogs": [parse_payload(row) for row in audit_logs],
+        "stats": dict(stats),
+        "accuracyCertification": _compute_accuracy_certification(conn, organization_id),
+    }
+
+
+@app.get("/v1/enterprise/super-admin/organizations/{organization_id}")
+async def get_super_admin_organization_detail(
+    organization_id: str,
+    user: dict = Depends(_require_role("super_admin")),
+):
+    conn = _enterprise_connection()
+    try:
+        return _serialize_super_admin_org_detail(conn, organization_id)
+    finally:
+        conn.close()
+
+
+@app.patch("/v1/enterprise/super-admin/organizations/{organization_id}/license")
+async def update_super_admin_license(
+    organization_id: str,
+    request: SuperAdminLicenseUpdateRequest,
+    user: dict = Depends(_require_role("super_admin")),
+):
+    conn = _enterprise_connection()
+    try:
+        org = conn.execute(
+            "SELECT id, name FROM organizations WHERE id = ?",
+            (organization_id,),
+        ).fetchone()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        license_row = conn.execute(
+            "SELECT * FROM licenses WHERE organization_id = ? ORDER BY created_at DESC LIMIT 1",
+            (organization_id,),
+        ).fetchone()
+        if not license_row:
+            raise HTTPException(status_code=404, detail="License not found")
+        amount = request.amount if request.amount is not None else license_row["amount"]
+        currency = (request.currency or license_row["currency"] or DEFAULT_BILLING_CURRENCY).upper()
+        conn.execute(
+            """
+            UPDATE licenses
+            SET seats_purchased = ?, scan_quota = ?, amount = ?, currency = ?
+            WHERE id = ?
+            """,
+            (request.seats, request.scanQuota, amount, currency, license_row["id"]),
+        )
+        _record_org_event(
+            conn,
+            organization_id,
+            "license_updated",
+            {
+                "seats": request.seats,
+                "scanQuota": request.scanQuota,
+                "amount": amount,
+                "currency": currency,
+            },
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "license_updated",
+            organization_id=organization_id,
+            actor_user_id=user.get("sub"),
+            subject_type="license",
+            subject_id=license_row["id"],
+            payload={
+                "seats": request.seats,
+                "scanQuota": request.scanQuota,
+                "amount": amount,
+                "currency": currency,
+            },
+        )
+        conn.commit()
+        logger.info(f"[super_admin] {user.get('email')} updated license for org {organization_id}")
+        return _serialize_super_admin_org_detail(conn, organization_id)
+    finally:
+        conn.close()
+
+
+@app.post("/v1/enterprise/super-admin/organizations/{organization_id}/owner-access")
+async def reset_super_admin_owner_access(
+    organization_id: str,
+    request: SuperAdminOwnerAccessResetRequest,
+    user: dict = Depends(_require_role("super_admin")),
+):
+    conn = _enterprise_connection()
+    try:
+        org = conn.execute(
+            "SELECT id, name FROM organizations WHERE id = ?",
+            (organization_id,),
+        ).fetchone()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        params: tuple[Any, ...]
+        if request.ownerUserId:
+            owner_query = """
+                SELECT id, name, email, status
+                FROM organization_users
+                WHERE organization_id = ? AND id = ? AND role = 'org_owner'
+            """
+            params = (organization_id, request.ownerUserId)
+        else:
+            owner_query = """
+                SELECT id, name, email, status
+                FROM organization_users
+                WHERE organization_id = ? AND role = 'org_owner'
+                ORDER BY created_at ASC
+                LIMIT 1
+            """
+            params = (organization_id,)
+        owner = conn.execute(owner_query, params).fetchone()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Organization owner not found")
+        otp_sent = False
+        if request.sendOtp:
+            code = str(random.randint(100000, 999999))
+            _otp_set(owner["email"], code, ttl_minutes=10)
+            html = (
+                f"<p>Your Tailor-X admin access was reset by platform support.</p>"
+                f"<p>Use this login code:</p>"
+                f"<h2 style='font-family:monospace;letter-spacing:4px'>{code}</h2>"
+                f"<p>This code expires in 10 minutes.</p>"
+            )
+            try:
+                otp_sent = bool(_send_email(owner["email"], "Your Tailor-X admin access code", html))
+            except Exception as exc:
+                logger.error(f"[super_admin] owner access email failed for {owner['email']}: {exc}")
+        conn.execute(
+            "UPDATE organization_users SET status = 'active' WHERE id = ?",
+            (owner["id"],),
+        )
+        _record_org_event(
+            conn,
+            organization_id,
+            "owner_access_reset",
+            {"ownerEmail": owner["email"], "otpSent": otp_sent},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "owner_access_reset",
+            organization_id=organization_id,
+            actor_user_id=user.get("sub"),
+            subject_type="organization_user",
+            subject_id=owner["id"],
+            payload={"ownerEmail": owner["email"], "otpSent": otp_sent},
+        )
+        conn.commit()
+        logger.info(f"[super_admin] {user.get('email')} reset owner access for org {organization_id}")
+        return {
+            "ownerUserId": owner["id"],
+            "ownerEmail": owner["email"],
+            "status": "active",
+            "otpSent": otp_sent,
         }
     finally:
         conn.close()
@@ -3544,6 +3902,27 @@ async def suspend_organization(
     user: dict = Depends(_require_role("super_admin")),
 ):
     result = _set_organization_status(organization_id, "suspended")
+    conn = _enterprise_connection()
+    try:
+        _record_org_event(
+            conn,
+            organization_id,
+            "organization_suspended",
+            {"status": "suspended"},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "organization_suspended",
+            organization_id=organization_id,
+            actor_user_id=user.get("sub"),
+            subject_type="organization",
+            subject_id=organization_id,
+            payload={"status": "suspended"},
+        )
+        conn.commit()
+    finally:
+        conn.close()
     logger.info(f"[super_admin] {user.get('email')} suspended org {organization_id}")
     return result
 
@@ -3554,7 +3933,59 @@ async def activate_organization(
     user: dict = Depends(_require_role("super_admin")),
 ):
     result = _set_organization_status(organization_id, "active")
+    conn = _enterprise_connection()
+    try:
+        _record_org_event(
+            conn,
+            organization_id,
+            "organization_activated",
+            {"status": "active"},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "organization_activated",
+            organization_id=organization_id,
+            actor_user_id=user.get("sub"),
+            subject_type="organization",
+            subject_id=organization_id,
+            payload={"status": "active"},
+        )
+        conn.commit()
+    finally:
+        conn.close()
     logger.info(f"[super_admin] {user.get('email')} activated org {organization_id}")
+    return result
+
+
+@app.post("/v1/enterprise/super-admin/organizations/{organization_id}/archive")
+async def archive_organization(
+    organization_id: str,
+    user: dict = Depends(_require_role("super_admin")),
+):
+    result = _set_organization_status(organization_id, "archived")
+    conn = _enterprise_connection()
+    try:
+        _record_org_event(
+            conn,
+            organization_id,
+            "organization_archived",
+            {"status": "archived"},
+            user.get("sub"),
+        )
+        _record_audit_event(
+            conn,
+            "organization_archived",
+            organization_id=organization_id,
+            actor_user_id=user.get("sub"),
+            subject_type="organization",
+            subject_id=organization_id,
+            payload={"status": "archived"},
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    logger.info(f"[super_admin] {user.get('email')} archived org {organization_id}")
     return result
 
 
@@ -3577,6 +4008,9 @@ async def delete_organization(
         # PRAGMA per-connection; Postgres uses the schema-level ON DELETE
         # CASCADE we declared. Doing them explicitly works on both.
         for stmt in (
+            "DELETE FROM accuracy_benchmark_records WHERE organization_id = ?",
+            "DELETE FROM audit_logs WHERE organization_id = ?",
+            "DELETE FROM org_events WHERE organization_id = ?",
             "DELETE FROM billing_records WHERE organization_id = ?",
             "DELETE FROM measurement_sessions WHERE organization_id = ?",
             "DELETE FROM customers WHERE organization_id = ?",

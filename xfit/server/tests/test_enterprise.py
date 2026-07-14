@@ -30,6 +30,27 @@ def _login_as(app_module, client, email: str) -> str:
     return verify.json()["token"]
 
 
+def _ensure_super_admin(app_module, email: str = "platform-admin@example.com") -> str:
+    conn = app_module._enterprise_connection()
+    try:
+        existing = conn.execute(
+            "SELECT email FROM organization_users WHERE role='super_admin' LIMIT 1"
+        ).fetchone()
+        if existing:
+            return existing["email"]
+        conn.execute(
+            """
+            INSERT INTO organization_users (id, organization_id, name, email, role, status, created_at)
+            VALUES (?, NULL, 'Platform Admin', ?, 'super_admin', 'active', ?)
+            """,
+            (app_module._new_id("usr"), email, app_module._enterprise_now()),
+        )
+        conn.commit()
+        return email
+    finally:
+        conn.close()
+
+
 # --- Auth / OTP ---
 
 def test_send_otp_returns_200_for_unknown_email(client):
@@ -69,6 +90,57 @@ def test_super_admin_endpoint_requires_super_admin_role(app_module, client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403
+
+
+def test_super_admin_operations_console_endpoints(app_module, client):
+    org = _bootstrap_org(client, name="Ops Console Co", admin_email="ops-owner@example.com")
+    super_email = _ensure_super_admin(app_module)
+    token = _login_as(app_module, client, super_email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    dashboard = client.get("/v1/enterprise/super-admin/dashboard", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    data = dashboard.json()
+    assert data["summary"]["databaseStatus"] == "online"
+    assert data["summary"]["activeOrganizationCount"] >= 1
+    assert "revenueByCurrency" in data["summary"]
+    org_rows = [row for row in data["organizations"] if row["id"] == org["organizationId"]]
+    assert org_rows
+    assert org_rows[0]["owner_email"] == "ops-owner@example.com"
+
+    detail = client.get(
+        f"/v1/enterprise/super-admin/organizations/{org['organizationId']}",
+        headers=headers,
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["owner"]["email"] == "ops-owner@example.com"
+    assert detail.json()["stats"]["user_count"] >= 1
+
+    update = client.patch(
+        f"/v1/enterprise/super-admin/organizations/{org['organizationId']}/license",
+        headers=headers,
+        json={"seats": 12, "scanQuota": 750, "amount": 250000, "currency": "NGN"},
+    )
+    assert update.status_code == 200, update.text
+    assert update.json()["license"]["seats_purchased"] == 12
+    assert update.json()["license"]["scan_quota"] == 750
+    assert update.json()["license"]["currency"] == "NGN"
+
+    reset = client.post(
+        f"/v1/enterprise/super-admin/organizations/{org['organizationId']}/owner-access",
+        headers=headers,
+        json={"sendOtp": False},
+    )
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["ownerEmail"] == "ops-owner@example.com"
+    assert reset.json()["status"] == "active"
+
+    archive = client.post(
+        f"/v1/enterprise/super-admin/organizations/{org['organizationId']}/archive",
+        headers=headers,
+    )
+    assert archive.status_code == 200, archive.text
+    assert archive.json()["status"] == "archived"
 
 
 def test_enterprise_session_measurements_appear_on_dashboard(app_module, client):
