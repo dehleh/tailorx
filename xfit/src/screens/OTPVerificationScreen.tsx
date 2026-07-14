@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  SafeAreaView, KeyboardAvoidingView, Platform, Alert,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { useAuthStore } from '../stores/authStore';
 import { generateId } from '../utils/helpers';
@@ -68,6 +69,15 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
         isPrivacyAccepted: false,
         createdAt: new Date().toISOString(),
       });
+      const authState = useAuthStore.getState();
+      if (authState.error) {
+        setError(authState.error);
+        setIsLoading(false);
+        return;
+      }
+      if (!authState.isAuthenticated) {
+        setIsLoading(false);
+      }
     } catch (e: any) {
       setIsLoading(false);
       setError('Network error — is the server running?');
@@ -90,7 +100,7 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
   const isComplete = code.every((c) => c.length > 0);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}

@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import * as Sentry from '@sentry/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAppInitialization } from './src/utils/useAppInitialization';
 
@@ -19,10 +20,10 @@ function App() {
   useAppInitialization();
 
   return (
-    <>
+    <SafeAreaProvider>
       <AppNavigator />
       <StatusBar style="auto" />
-    </>
+    </SafeAreaProvider>
   );
 }
 

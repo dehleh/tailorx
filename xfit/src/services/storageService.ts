@@ -53,10 +53,11 @@ class StorageService {
   async saveSensitive<T>(key: string, data: T): Promise<void> {
     try {
       const jsonData = JSON.stringify(data);
+      const secureKey = this.secureStoreKey(key);
       await this.clearSecureChunks(key);
 
       if (jsonData.length <= this.SECURE_CHUNK_SIZE) {
-        await SecureStore.setItemAsync(key, jsonData);
+        await SecureStore.setItemAsync(secureKey, jsonData);
         await AsyncStorage.removeItem(key);
         return;
       }
@@ -69,7 +70,7 @@ class StorageService {
         );
       }
       await SecureStore.setItemAsync(this.secureChunkCountKey(key), String(chunkCount));
-      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(secureKey);
       await AsyncStorage.removeItem(key);
     } catch (error) {
       console.error(`Failed to save sensitive data for key ${key}:`, error);
@@ -95,7 +96,7 @@ class StorageService {
         return JSON.parse(chunks.join(''));
       }
 
-      const directValue = await SecureStore.getItemAsync(key);
+      const directValue = await SecureStore.getItemAsync(this.secureStoreKey(key));
       if (directValue) {
         return JSON.parse(directValue);
       }
@@ -120,7 +121,7 @@ class StorageService {
   async removeSensitive(key: string): Promise<void> {
     try {
       await this.clearSecureChunks(key);
-      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(this.secureStoreKey(key));
       await AsyncStorage.removeItem(key);
     } catch (error) {
       console.error(`Failed to remove sensitive data for key ${key}:`, error);
@@ -158,12 +159,22 @@ class StorageService {
     }
   }
 
+  private secureStoreKey(key: string): string {
+    const cleaned = key
+      .trim()
+      .replace(/^@+/, '')
+      .replace(/:/g, '.')
+      .replace(/[^A-Za-z0-9._-]/g, '_');
+
+    return cleaned || 'tailorx.value';
+  }
+
   private secureChunkKey(key: string, index: number): string {
-    return `${key}:secure_chunk:${index}`;
+    return `${this.secureStoreKey(key)}.secure_chunk.${index}`;
   }
 
   private secureChunkCountKey(key: string): string {
-    return `${key}:secure_chunk_count`;
+    return `${this.secureStoreKey(key)}.secure_chunk_count`;
   }
 
   private async clearSecureChunks(key: string): Promise<void> {
@@ -216,7 +227,7 @@ class StorageService {
    */
   async saveAuthToken(token: string): Promise<void> {
     try {
-      await SecureStore.setItemAsync(this.KEYS.AUTH_TOKEN, token);
+      await SecureStore.setItemAsync(this.secureStoreKey(this.KEYS.AUTH_TOKEN), token);
     } catch (error) {
       console.error('Failed to save auth token to secure store:', error);
       throw new Error('Auth token save failed');
@@ -228,7 +239,7 @@ class StorageService {
    */
   async loadAuthToken(): Promise<string | null> {
     try {
-      return await SecureStore.getItemAsync(this.KEYS.AUTH_TOKEN);
+      return await SecureStore.getItemAsync(this.secureStoreKey(this.KEYS.AUTH_TOKEN));
     } catch (error) {
       console.error('Failed to load auth token from secure store:', error);
       return null;
@@ -240,7 +251,7 @@ class StorageService {
    */
   async removeAuthToken(): Promise<void> {
     try {
-      await SecureStore.deleteItemAsync(this.KEYS.AUTH_TOKEN);
+      await SecureStore.deleteItemAsync(this.secureStoreKey(this.KEYS.AUTH_TOKEN));
     } catch (error) {
       console.error('Failed to remove auth token from secure store:', error);
     }

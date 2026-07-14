@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 
 const funFacts = [
@@ -40,7 +41,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
   const remaining = Math.max(0, Math.ceil((100 - progress) / 25));
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.content}>
         {/* Circular indicator */}
         <View style={styles.circleWrapper}>
