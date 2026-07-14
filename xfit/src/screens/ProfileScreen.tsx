@@ -12,6 +12,7 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { useUserStore } from '../stores/userStore';
 import { useMeasurementStore } from '../stores/measurementStore';
@@ -308,24 +309,30 @@ export default function ProfileScreen({ navigation }: any) {
       <Modal
         visible={editModalVisible}
         animationType="slide"
-        presentationStyle="pageSheet"
+        presentationStyle="fullScreen"
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Edit Profile</Text>
-            <TouchableOpacity onPress={saveProfile}>
-              <Text style={styles.modalSave}>Save</Text>
-            </TouchableOpacity>
-          </View>
+        <SafeAreaView style={styles.modalSafeArea} edges={['top', 'bottom']}>
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.modalCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <TouchableOpacity onPress={saveProfile}>
+                <Text style={styles.modalSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
 
-          <ScrollView style={styles.modalBody}>
+          <ScrollView
+            style={styles.modalBody}
+            contentContainerStyle={styles.modalBodyContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {/* Name */}
             <Text style={styles.fieldLabel}>Name</Text>
             <TextInput
@@ -462,8 +469,9 @@ export default function ProfileScreen({ navigation }: any) {
                 </TouchableOpacity>
               ))}
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
     </ScrollView>
   );
@@ -687,6 +695,10 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     paddingBottom: 80,
   },
+  modalSafeArea: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -715,7 +727,11 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   modalBody: {
+    flex: 1,
+  },
+  modalBodyContent: {
     padding: 20,
+    paddingBottom: 120,
   },
   fieldLabel: {
     fontSize: 14,
