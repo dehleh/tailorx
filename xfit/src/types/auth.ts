@@ -3,6 +3,13 @@ export interface AuthUser {
   email: string;
   displayName: string;
   avatarUrl?: string;
+  gender?: 'male' | 'female' | 'other';
+  heightCm?: number;
+  weightKg?: number;
+  preferredUnit?: 'cm' | 'inch';
+  country?: string;
+  preferredStyle?: string;
+  colorPreference?: string;
   isOnboarded: boolean;
   isPrivacyAccepted: boolean;
   createdAt: string;
@@ -33,5 +40,6 @@ export type AuthStackParamList = {
   EmailAuth: undefined;
   OTPVerification: { email: string; displayName?: string };
   GettingStarted: undefined;
+  ProfileSetup: undefined;
   PrivacyConsent: undefined;
 };

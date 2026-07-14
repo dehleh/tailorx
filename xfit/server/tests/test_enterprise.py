@@ -69,6 +69,30 @@ def test_verify_otp_issues_jwt_with_role_and_org(app_module, client):
     assert decoded["organization_id"] == org["organizationId"]
 
 
+def test_user_profile_sync_round_trip(client):
+    payload = {
+        "email": "bamidele@example.com",
+        "displayName": "Bamidele",
+        "gender": "male",
+        "heightCm": 180,
+        "weightKg": 82,
+        "preferredUnit": "cm",
+        "country": "Nigeria",
+        "preferredStyle": "modern",
+        "colorPreference": "neutral",
+    }
+    saved = client.put("/v1/users/profile", json=payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["displayName"] == "Bamidele"
+
+    fetched = client.get("/v1/users/profile", params={"email": "bamidele@example.com"})
+    assert fetched.status_code == 200, fetched.text
+    data = fetched.json()
+    assert data["email"] == "bamidele@example.com"
+    assert data["heightCm"] == 180
+    assert data["preferredStyle"] == "modern"
+
+
 # --- RBAC ---
 
 def test_org_dashboard_denies_other_org(app_module, client):

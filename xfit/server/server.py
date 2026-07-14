@@ -550,6 +550,18 @@ class OTPVerifyRequest(BaseModel):
     email: str
     code: str
 
+
+class UserProfileSyncRequest(BaseModel):
+    email: EmailStr
+    displayName: str = Field(default="", max_length=120)
+    gender: Optional[str] = Field(default=None, max_length=20)
+    heightCm: Optional[float] = Field(default=None, ge=50, le=250)
+    weightKg: Optional[float] = Field(default=None, ge=20, le=300)
+    preferredUnit: str = Field(default="cm", max_length=8)
+    country: Optional[str] = Field(default=None, max_length=80)
+    preferredStyle: Optional[str] = Field(default=None, max_length=40)
+    colorPreference: Optional[str] = Field(default=None, max_length=40)
+
 class PoseResponse(BaseModel):
     landmarks: list[LandmarkResponse]
     imageWidth: int
@@ -980,6 +992,23 @@ def _enterprise_now() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
+def _serialize_user_profile(row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "displayName": row["display_name"] or "",
+        "gender": row["gender"],
+        "heightCm": row["height_cm"],
+        "weightKg": row["weight_kg"],
+        "preferredUnit": row["preferred_unit"] or "cm",
+        "country": row["country"],
+        "preferredStyle": row["preferred_style"],
+        "colorPreference": row["color_preference"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return slug or f"org-{secrets.token_hex(3)}"
@@ -1143,6 +1172,21 @@ def init_enterprise_db() -> None:
                 FOREIGN KEY (actor_user_id) REFERENCES organization_users(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                display_name TEXT,
+                gender TEXT,
+                height_cm REAL,
+                weight_kg REAL,
+                preferred_unit TEXT NOT NULL DEFAULT 'cm',
+                country TEXT,
+                preferred_style TEXT,
+                color_preference TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS audit_logs (
                 id TEXT PRIMARY KEY,
                 organization_id TEXT,
@@ -1248,6 +1292,7 @@ def init_enterprise_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON measurement_sessions(customer_id)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_review_status ON measurement_sessions(review_status)",
             "CREATE INDEX IF NOT EXISTS idx_org_events_org_created ON org_events(organization_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_user_profiles_email ON user_profiles(email)",
             "CREATE INDEX IF NOT EXISTS idx_audit_org_created ON audit_logs(organization_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_accuracy_benchmarks_org ON accuracy_benchmark_records(organization_id)",
             "CREATE INDEX IF NOT EXISTS idx_measurement_shares_token ON measurement_shares(token)",
@@ -2887,6 +2932,7 @@ async def start_enterprise_session(invite_code: str, request: EnterpriseSessionS
             {
                 "sessionId": session_id,
                 "customerId": customer_id,
+                "customerName": request.customerName,
                 "customerEmail": customer_email,
                 "inviteCode": invite_code,
             },
@@ -2923,6 +2969,10 @@ async def complete_enterprise_session(session_id: str, request: EnterpriseSessio
             raise HTTPException(status_code=404, detail="Session not found")
         if session["status"] == "completed":
             return {"sessionId": session_id, "status": "completed"}
+        customer = conn.execute(
+            "SELECT full_name, email FROM customers WHERE id = ?",
+            (session["customer_id"],),
+        ).fetchone()
 
         license_row = _get_license_for_org(conn, session["organization_id"])
         if not _can_consume_scan(license_row):
@@ -2993,6 +3043,8 @@ async def complete_enterprise_session(session_id: str, request: EnterpriseSessio
                 "measurementCount": len(measurements),
                 "accuracyScore": request.accuracyScore,
                 "reviewStatus": review_status,
+                "customerName": customer["full_name"] if customer else None,
+                "customerEmail": customer["email"] if customer else None,
             },
         )
         _record_audit_event(
@@ -5163,6 +5215,74 @@ def _send_email_resend(to_email: str, subject: str, html_body: str, from_email: 
 def _send_email(to_email: str, subject: str, html_body: str, from_email: Optional[str] = None) -> bool:
     """Send transactional email via Resend. Pass `from_email` to override the default sender."""
     return _send_email_resend(to_email, subject, html_body, from_email=from_email)
+
+
+@app.get("/v1/users/profile")
+async def get_user_profile(email: EmailStr):
+    normalized_email = str(email).strip().lower()
+    conn = _enterprise_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM user_profiles WHERE email = ?",
+            (normalized_email,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return _serialize_user_profile(row)
+    finally:
+        conn.close()
+
+
+@app.put("/v1/users/profile")
+async def upsert_user_profile(request: UserProfileSyncRequest):
+    normalized_email = str(request.email).strip().lower()
+    display_name = request.displayName.strip() if request.displayName else ""
+    now = _enterprise_now()
+    profile_id = _new_id("usr")
+    conn = _enterprise_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO user_profiles (
+                id, email, display_name, gender, height_cm, weight_kg,
+                preferred_unit, country, preferred_style, color_preference,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET
+                display_name = excluded.display_name,
+                gender = excluded.gender,
+                height_cm = excluded.height_cm,
+                weight_kg = excluded.weight_kg,
+                preferred_unit = excluded.preferred_unit,
+                country = excluded.country,
+                preferred_style = excluded.preferred_style,
+                color_preference = excluded.color_preference,
+                updated_at = excluded.updated_at
+            """,
+            (
+                profile_id,
+                normalized_email,
+                display_name,
+                request.gender,
+                request.heightCm,
+                request.weightKg,
+                request.preferredUnit or "cm",
+                request.country,
+                request.preferredStyle,
+                request.colorPreference,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM user_profiles WHERE email = ?",
+            (normalized_email,),
+        ).fetchone()
+        return _serialize_user_profile(row)
+    finally:
+        conn.close()
 
 
 @app.post("/v1/auth/send-otp")

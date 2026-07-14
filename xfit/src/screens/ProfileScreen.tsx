@@ -20,6 +20,9 @@ import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { getDisplayName } from '../utils/displayName';
 
 const WEB_ADMIN_URL = 'https://admin.tailorxfit.com';
+const countryOptions = ['Nigeria', 'United States', 'United Kingdom', 'Ghana', 'South Africa'];
+const styleOptions = ['classic', 'modern', 'business', 'traditional', 'modest', 'streetwear', 'minimal'] as const;
+const colorOptions = ['neutral', 'warm', 'cool', 'bold', 'earth'] as const;
 
 export default function ProfileScreen({ navigation }: any) {
   const user = useUserStore((state) => state.user);
@@ -29,6 +32,7 @@ export default function ProfileScreen({ navigation }: any) {
   const clearUser = useUserStore((state) => state.clearUser);
   const measurements = useMeasurementStore((state) => state.measurements);
   const authUser = useAuthStore((state) => state.user);
+  const updateAuthUser = useAuthStore((state) => state.updateUser);
   const logout = useAuthStore((state) => state.logout);
   const organizationId = useEnterpriseStore((state) => state.organizationId);
   const organizationName = useEnterpriseStore((state) => state.organizationName);
@@ -41,6 +45,9 @@ export default function ProfileScreen({ navigation }: any) {
   const [editHeight, setEditHeight] = useState('');
   const [editWeight, setEditWeight] = useState('');
   const [editUnit, setEditUnit] = useState<'cm' | 'inch'>('cm');
+  const [editCountry, setEditCountry] = useState('');
+  const [editStyle, setEditStyle] = useState<(typeof styleOptions)[number]>('modern');
+  const [editColor, setEditColor] = useState<(typeof colorOptions)[number]>('neutral');
 
   useEffect(() => {
     loadUser();
@@ -55,6 +62,9 @@ export default function ProfileScreen({ navigation }: any) {
         email: authUser?.email || '',
         gender: 'other',
         preferredUnit: 'cm',
+        country: '',
+        preferredStyle: 'modern',
+        colorPreference: 'neutral',
         createdAt: new Date(),
         measurementHistory: [],
       });
@@ -68,6 +78,9 @@ export default function ProfileScreen({ navigation }: any) {
     setEditHeight(user?.heightCm?.toString() || '');
     setEditWeight(user?.weightKg?.toString() || '');
     setEditUnit(user?.preferredUnit || 'cm');
+    setEditCountry(user?.country || '');
+    setEditStyle(user?.preferredStyle || 'modern');
+    setEditColor(user?.colorPreference || 'neutral');
     setEditModalVisible(true);
   };
 
@@ -91,7 +104,22 @@ export default function ProfileScreen({ navigation }: any) {
       heightCm: editHeight ? heightNum : undefined,
       weightKg: editWeight ? weightNum : undefined,
       preferredUnit: editUnit,
+      country: editCountry,
+      preferredStyle: editStyle,
+      colorPreference: editColor,
     });
+    if (authUser) {
+      await updateAuthUser({
+        displayName: editName.trim() || getDisplayName(authUser?.displayName, authUser?.email),
+        gender: editGender,
+        heightCm: editHeight ? heightNum : undefined,
+        weightKg: editWeight ? weightNum : undefined,
+        preferredUnit: editUnit,
+        country: editCountry,
+        preferredStyle: editStyle,
+        colorPreference: editColor,
+      });
+    }
 
     setEditModalVisible(false);
     Alert.alert('Profile Updated', 'Your profile has been saved.');
@@ -140,7 +168,7 @@ export default function ProfileScreen({ navigation }: any) {
     : '';
 
   const profileComplete =
-    !!user?.name && !!user?.heightCm && user?.gender !== 'other';
+    !!user?.name && !!user?.heightCm && !!user?.country && user?.gender !== 'other';
 
   return (
     <ScrollView style={styles.container}>
@@ -211,6 +239,21 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={styles.infoCard}>
           <Text style={styles.infoLabel}>Member Since</Text>
           <Text style={styles.infoValue}>{joinDate || '—'}</Text>
+        </View>
+      </View>
+
+      <View style={styles.infoSection}>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Country</Text>
+          <Text style={styles.infoValue}>{user?.country || 'Not set'}</Text>
+        </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Style</Text>
+          <Text style={styles.infoValue}>{user?.preferredStyle || 'Not set'}</Text>
+        </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Colors</Text>
+          <Text style={styles.infoValue}>{user?.colorPreference || 'Not set'}</Text>
         </View>
       </View>
 
@@ -370,6 +413,51 @@ export default function ProfileScreen({ navigation }: any) {
                     ]}
                   >
                     {u === 'cm' ? '📏 Centimeters' : '📐 Inches'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Country</Text>
+            <View style={styles.chipWrap}>
+              {countryOptions.map((country) => (
+                <TouchableOpacity
+                  key={country}
+                  style={[styles.profileChip, editCountry === country && styles.profileChipActive]}
+                  onPress={() => setEditCountry(country)}
+                >
+                  <Text style={[styles.profileChipText, editCountry === country && styles.profileChipTextActive]}>
+                    {country}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Preferred style</Text>
+            <View style={styles.chipWrap}>
+              {styleOptions.map((style) => (
+                <TouchableOpacity
+                  key={style}
+                  style={[styles.profileChip, editStyle === style && styles.profileChipActive]}
+                  onPress={() => setEditStyle(style)}
+                >
+                  <Text style={[styles.profileChipText, editStyle === style && styles.profileChipTextActive]}>
+                    {style}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Color preference</Text>
+            <View style={styles.chipWrap}>
+              {colorOptions.map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  style={[styles.profileChip, editColor === color && styles.profileChipActive]}
+                  onPress={() => setEditColor(color)}
+                >
+                  <Text style={[styles.profileChipText, editColor === color && styles.profileChipTextActive]}>
+                    {color}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -678,5 +766,31 @@ const styles = StyleSheet.create({
   genderOptionTextActive: {
     color: Colors.primary,
     fontWeight: '700',
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  profileChip: {
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  profileChipActive: {
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
+  },
+  profileChipText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  profileChipTextActive: {
+    color: Colors.white,
   },
 });

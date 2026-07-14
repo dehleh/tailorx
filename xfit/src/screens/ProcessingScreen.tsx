@@ -10,7 +10,7 @@ const funFacts = [
 ];
 
 export default function ProcessingScreen({ route, navigation }: any) {
-  const { result, accuracyReport } = route.params;
+  const { result, accuracyReport, source } = route.params;
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<'processing' | 'complete'>('processing');
   const [factIndex] = useState(() => Math.floor(Math.random() * funFacts.length));
@@ -33,7 +33,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
     if (progress >= 100 && stage === 'processing') {
       setStage('complete');
       setTimeout(() => {
-        navigation.replace('ScanResults', { result, accuracyReport });
+        navigation.replace('ScanResults', { result, accuracyReport, source });
       }, 1200);
     }
   }, [progress, stage, navigation, result, accuracyReport]);

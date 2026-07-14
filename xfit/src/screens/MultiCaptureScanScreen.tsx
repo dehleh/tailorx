@@ -447,6 +447,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       const safe = (v: number | undefined): number =>
         (typeof v === 'number' && isFinite(v) && v > 0) ? Math.round(v * 10) / 10 : 0;
 
+      const scanSource = activeEnterpriseSessionId ? 'enterprise' : 'free';
       const newMeasurement: BodyMeasurement = {
         id: Date.now().toString(),
         userId: user?.id || 'guest',
@@ -481,7 +482,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           ...(result.measurements.roundSleeveElbow && { roundSleeveElbow: safe(result.measurements.roundSleeveElbow) }),
         },
         unit: user?.preferredUnit || 'cm',
-        source: activeEnterpriseSessionId ? 'enterprise' : 'free',
+        source: scanSource,
         images: allCaptures.map(c => c.imageUri),
         accuracy: {
           overallScore: result.overallAccuracy,
@@ -549,6 +550,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         result,
         accuracyReport,
         measurementId: newMeasurement.id,
+        source: scanSource,
       });
       resetScan();
     } catch (error: any) {

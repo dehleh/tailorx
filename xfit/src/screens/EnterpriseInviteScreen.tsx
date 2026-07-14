@@ -13,18 +13,26 @@ import { Colors } from '../constants/colors';
 import { enterpriseApi } from '../services/enterpriseApi';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { InviteLookupResponse } from '../types/enterprise';
+import { useAuthStore } from '../stores/authStore';
+import { useUserStore } from '../stores/userStore';
+import { getDisplayName } from '../utils/displayName';
 
 export default function EnterpriseInviteScreen({ navigation, route }: any) {
+  const authUser = useAuthStore((state) => state.user);
+  const userProfile = useUserStore((state) => state.user);
   const activeInviteCode = useEnterpriseStore((state) => state.activeInviteCode);
   const setActiveInvite = useEnterpriseStore((state) => state.setActiveInvite);
   const setActiveSession = useEnterpriseStore((state) => state.setActiveSession);
   const routeInviteCode = route?.params?.inviteCode;
   const [inviteCode, setInviteCode] = useState(routeInviteCode || activeInviteCode || '');
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerName, setCustomerName] = useState(
+    getDisplayName(userProfile?.name || authUser?.displayName, authUser?.email || userProfile?.email, '')
+  );
+  const [customerEmail, setCustomerEmail] = useState(authUser?.email || userProfile?.email || '');
   const [invite, setInvite] = useState<InviteLookupResponse | null>(null);
   const [isLoadingInvite, setIsLoadingInvite] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const isReadyForInviteScan = Boolean(authUser?.email && authUser.isOnboarded);
 
   const loadInvite = async (codeOverride?: string) => {
     const code = (codeOverride || inviteCode).trim();
@@ -46,6 +54,15 @@ export default function EnterpriseInviteScreen({ navigation, route }: any) {
   };
 
   useEffect(() => {
+    if (!customerName) {
+      setCustomerName(getDisplayName(userProfile?.name || authUser?.displayName, authUser?.email || userProfile?.email, ''));
+    }
+    if (!customerEmail && (authUser?.email || userProfile?.email)) {
+      setCustomerEmail(authUser?.email || userProfile?.email || '');
+    }
+  }, [authUser?.displayName, authUser?.email, customerEmail, customerName, userProfile?.email, userProfile?.name]);
+
+  useEffect(() => {
     if (routeInviteCode) {
       setInviteCode(routeInviteCode);
       loadInvite(routeInviteCode);
@@ -57,6 +74,20 @@ export default function EnterpriseInviteScreen({ navigation, route }: any) {
   }, [activeInviteCode, routeInviteCode]);
 
   const startSession = async () => {
+    if (!authUser?.email) {
+      Alert.alert('Sign in required', 'Sign in first, then this invite will stay ready for your scan.', [
+        { text: 'Sign in', onPress: () => navigation.navigate('EmailAuth') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    if (!authUser.isOnboarded) {
+      Alert.alert('Complete your profile', 'Finish your fit profile and privacy consent before starting the tailor scan.', [
+        { text: 'Continue setup', onPress: () => navigation.navigate('GettingStarted') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
     if (!invite) {
       Alert.alert('Load invite', 'Load the branded invite before starting the scan.');
       return;
@@ -100,6 +131,14 @@ export default function EnterpriseInviteScreen({ navigation, route }: any) {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Branded Customer Scan</Text>
       <Text style={styles.subtitle}>Enter the invite code from the fashion house, tailor, or designer to start a licensed measurement session.</Text>
+      {!isReadyForInviteScan ? (
+        <View style={styles.noticeCard}>
+          <Text style={styles.noticeTitle}>Invite link loaded first</Text>
+          <Text style={styles.noticeText}>
+            Sign in and complete your fit profile. This invite code will stay on this device so your scan can report back to the tailor dashboard.
+          </Text>
+        </View>
+      ) : null}
 
       <Text style={styles.label}>Invite code</Text>
       <TextInput style={styles.input} value={inviteCode} onChangeText={setInviteCode} autoCapitalize="none" />
@@ -149,4 +188,7 @@ const styles = StyleSheet.create({
   brandName: { fontSize: 22, fontWeight: '700', color: Colors.text.primary, marginBottom: 6 },
   brandHeadline: { fontSize: 14, color: Colors.text.secondary, marginBottom: 10 },
   brandQuota: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
+  noticeCard: { backgroundColor: '#E0F7F5', borderRadius: 14, padding: 14, marginBottom: 18, borderWidth: 1, borderColor: 'rgba(34, 197, 185, 0.25)' },
+  noticeTitle: { color: Colors.text.primary, fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  noticeText: { color: Colors.text.secondary, fontSize: 13, lineHeight: 19 },
 });

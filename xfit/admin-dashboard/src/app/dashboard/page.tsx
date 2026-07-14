@@ -219,6 +219,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [liveMessage, setLiveMessage] = useState('Live');
+  const [notificationText, setNotificationText] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -274,10 +275,15 @@ export default function DashboardPage() {
       try {
         const res = await getOrganizationEvents(user.organizationId!, cursor);
         if (cancelled) return;
-        const payload = res.data as { events: Array<{ eventType: string }>; cursor?: string };
+        const payload = res.data as { events: Array<{ eventType: string; payload?: Record<string, unknown> }>; cursor?: string };
         cursor = payload.cursor || cursor;
         if (initialized && payload.events.length > 0) {
+          const latest = payload.events[0];
+          const customerName = latest?.payload?.customerName || latest?.payload?.customerEmail;
           setLiveMessage(`${payload.events.length} update${payload.events.length === 1 ? '' : 's'}`);
+          setNotificationText(
+            `${formatStatus(latest?.eventType)}${customerName ? ` / ${customerName}` : ''}`
+          );
           loadDashboard(user.organizationId!, { silent: true });
         } else {
           setLiveMessage('Live');
@@ -432,6 +438,14 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+
+        {notificationText && (
+          <div className={styles.notificationBanner}>
+            <strong>New dashboard update</strong>
+            <span>{notificationText}</span>
+            <button type="button" onClick={() => setNotificationText('')}>Dismiss</button>
+          </div>
+        )}
 
         <div className={styles.metricGrid}>
           <div className={styles.metricCard}><p className={styles.metricLabel}>Staff</p><p className={styles.metricValue}>{metrics.staffCount}</p><span>Team seats</span></div>

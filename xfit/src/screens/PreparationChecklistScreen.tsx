@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { useUserStore } from '../stores/userStore';
@@ -85,15 +85,7 @@ export default function PreparationChecklistScreen({ navigation }: any) {
 
   const handleStart = () => {
     if (!canUseScanAccess) {
-      Alert.alert(
-        'Free scan already used',
-        'A second scan needs an invite link from a tailor or fashion house. You can still use the education guides for body type, style, color, wardrobe, and shopping guidance.',
-        [
-          { text: 'View guides', onPress: () => rootNavigation.navigate('EducationHub') },
-          { text: 'Use invite', onPress: () => rootNavigation.navigate('EnterpriseInvite') },
-          { text: 'Close', style: 'cancel' },
-        ]
-      );
+      rootNavigation.navigate('ScanLimit');
       return;
     }
 

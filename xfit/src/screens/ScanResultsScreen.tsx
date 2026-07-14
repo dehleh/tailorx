@@ -25,6 +25,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useUserStore } from '../stores/userStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { lookupSize, SizeLookupResult } from '../services/sizeChartService';
+import { buildStyleAdvice } from '../services/styleAdvisor';
 import { generateId } from '../utils/helpers';
 import ShareModal from '../components/ShareModal';
 
@@ -35,6 +36,7 @@ interface ScanResultsScreenProps {
       result: MeasurementResult;
       accuracyReport: AccuracyReport;
       measurementId?: string;
+      source?: 'free' | 'enterprise';
     };
   };
 }
@@ -132,6 +134,7 @@ export default function ScanResultsScreen({
   const userProfile = useUserStore((s) => s.user);
   const addMeasurement = useMeasurementStore((s) => s.addMeasurement);
   const activeEnterpriseSessionId = useEnterpriseStore((s) => s.activeSessionId);
+  const scanSource = route?.params?.source || (activeEnterpriseSessionId ? 'enterprise' : 'free');
   const [unit, setUnit] = useState<'cm' | 'inch'>('cm');
   const [shareVisible, setShareVisible] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -160,6 +163,11 @@ export default function ScanResultsScreen({
     if (!result?.measurements || Object.keys(result.measurements).length === 0) return null;
     const gender = (userProfile?.gender as 'male' | 'female' | 'other') || 'other';
     return lookupSize(result.measurements, gender);
+  }, [result, userProfile]);
+
+  const styleAdvice = useMemo(() => {
+    if (!result?.measurements) return buildStyleAdvice(userProfile, null);
+    return buildStyleAdvice(userProfile, { measurements: result.measurements } as any);
   }, [result, userProfile]);
 
   const lowConfidenceEntries = useMemo(() => {
@@ -266,7 +274,7 @@ export default function ScanResultsScreen({
       date: new Date(),
       measurements: result.measurements as any,
       unit,
-      source: activeEnterpriseSessionId ? 'enterprise' : 'free',
+      source: scanSource,
       accuracy: {
         overallScore: result.overallAccuracy,
         confidence: result.confidence,
@@ -288,7 +296,8 @@ export default function ScanResultsScreen({
   };
 
   const handleRescan = () => {
-    navigation.navigate('ScanHome');
+    const rootNavigation = navigation.getParent()?.getParent?.() || navigation.getParent?.() || navigation;
+    rootNavigation.navigate(scanSource === 'enterprise' ? 'EnterpriseInvite' : 'ScanLimit');
   };
 
   return (
@@ -301,6 +310,11 @@ export default function ScanResultsScreen({
           </View>
           <Text style={styles.heroTitle}>Scan Complete!</Text>
           <Text style={styles.heroSubtitle}>Your measurements are ready.</Text>
+          <View style={styles.sourcePill}>
+            <Text style={styles.sourcePillText}>
+              {scanSource === 'enterprise' ? 'Tailor invite scan' : 'Free scan'}
+            </Text>
+          </View>
         </View>
 
         {/* Security notice */}
@@ -358,6 +372,23 @@ export default function ScanResultsScreen({
               <Text style={styles.gridValue}>
                 {m.isWeight ? `${round1(m.value)} kg` : formatValue(m.value)}
               </Text>
+              {typeof result.confidence?.[m.key] === 'number' && (
+                <View
+                  style={[
+                    styles.confidenceBadge,
+                    { backgroundColor: getConfidenceInfo(result.confidence[m.key]).bg },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.confidenceBadgeText,
+                      { color: getConfidenceInfo(result.confidence[m.key]).color },
+                    ]}
+                  >
+                    {getConfidenceInfo(result.confidence[m.key]).label}
+                  </Text>
+                </View>
+              )}
             </View>
           ))}
         </View>
@@ -522,6 +553,15 @@ export default function ScanResultsScreen({
           </View>
         )}
 
+        <View style={styles.styleAdviceCard}>
+          <Text style={styles.styleAdviceLabel}>Style guidance</Text>
+          <Text style={styles.styleAdviceTitle}>{styleAdvice.bodyType}</Text>
+          <Text style={styles.styleAdviceBody}>{styleAdvice.bodyTypeReason}</Text>
+          {styleAdvice.fitTips.slice(0, 3).map((tip) => (
+            <Text key={tip} style={styles.styleAdviceTip}>- {tip}</Text>
+          ))}
+        </View>
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -577,6 +617,18 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.8)',
+  },
+  sourcePill: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 12,
+  },
+  sourcePillText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
   },
   securityNotice: {
     flexDirection: 'row',
@@ -923,5 +975,51 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     lineHeight: 18,
     marginBottom: 2,
+  },
+  styleAdviceCard: {
+    backgroundColor: '#E0F7F5',
+    marginHorizontal: 20,
+    marginBottom: 24,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 185, 0.25)',
+  },
+  styleAdviceLabel: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  styleAdviceTitle: {
+    color: Colors.text.primary,
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  styleAdviceBody: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  styleAdviceTip: {
+    color: Colors.text.primary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 3,
+  },
+  confidenceBadge: {
+    alignSelf: 'center',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  confidenceBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

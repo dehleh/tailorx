@@ -15,6 +15,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import EmailAuthScreen from '../screens/PhoneAuthScreen';
 import OTPVerificationScreen from '../screens/OTPVerificationScreen';
 import GettingStartedScreen from '../screens/GettingStartedScreen';
+import ProfileSetupScreen from '../screens/ProfileSetupScreen';
 import PrivacyConsentScreen from '../screens/PrivacyConsentScreen';
 
 // Main screens
@@ -23,6 +24,7 @@ import MeasurementsScreen from '../screens/MeasurementsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EnterpriseInviteScreen from '../screens/EnterpriseInviteScreen';
 import EducationHubScreen from '../screens/EducationHubScreen';
+import ScanLimitScreen from '../screens/ScanLimitScreen';
 
 // Stack navigators
 import ScanStackNavigator from './ScanStackNavigator';
@@ -96,8 +98,6 @@ export default function AppNavigator() {
           {isAuthenticated && isOnboarded ? (
             <>
               <RootStack.Screen name="MainTabs" component={MainTabs} />
-              <RootStack.Screen name="EnterpriseInvite" component={EnterpriseInviteScreen} options={{ headerShown: true, title: 'Branded Scan' }} />
-              <RootStack.Screen name="EducationHub" component={EducationHubScreen} options={{ headerShown: true, title: 'Guides & Tutorials' }} />
             </>
           ) : (
             <>
@@ -110,9 +110,13 @@ export default function AppNavigator() {
                 </>
               ) : null}
               <RootStack.Screen name="GettingStarted" component={GettingStartedScreen} />
+              <RootStack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
               <RootStack.Screen name="PrivacyConsent" component={PrivacyConsentScreen} />
             </>
           )}
+          <RootStack.Screen name="EnterpriseInvite" component={EnterpriseInviteScreen} options={{ headerShown: true, title: 'Branded Scan' }} />
+          <RootStack.Screen name="EducationHub" component={EducationHubScreen} options={{ headerShown: true, title: 'Guides & Tutorials' }} />
+          <RootStack.Screen name="ScanLimit" component={ScanLimitScreen} options={{ headerShown: false }} />
         </RootStack.Navigator>
       </NavigationContainer>
     </ErrorBoundary>

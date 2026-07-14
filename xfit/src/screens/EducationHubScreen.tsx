@@ -9,9 +9,27 @@ import {
   View,
 } from 'react-native';
 import { Colors } from '../constants/colors';
+import { useUserStore } from '../stores/userStore';
+import { useMeasurementStore } from '../stores/measurementStore';
+import { buildStyleAdvice } from '../services/styleAdvisor';
 
-const SCAN_TUTORIAL_URL =
-  'https://www.youtube.com/results?search_query=how+to+take+body+measurements+for+tailoring';
+const tutorialVideos = [
+  {
+    title: 'Prepare for an accurate scan',
+    body: 'Fitted clothing, lighting, camera distance, front view, and side view.',
+    url: 'https://www.youtube.com/results?search_query=how+to+prepare+for+body+measurement+scan',
+  },
+  {
+    title: 'How tailors take body measurements',
+    body: 'Understand the body points a tailor checks when confirming a digital measurement.',
+    url: 'https://www.youtube.com/results?search_query=tailor+body+measurement+tutorial',
+  },
+  {
+    title: 'How to choose clothing colors',
+    body: 'Learn simple color combination rules for daily outfits and special occasions.',
+    url: 'https://www.youtube.com/results?search_query=clothing+color+combination+guide',
+  },
+];
 
 const guideSections = [
   {
@@ -42,11 +60,15 @@ const guideSections = [
 ];
 
 export default function EducationHubScreen() {
-  const openTutorialVideo = async () => {
+  const user = useUserStore((s) => s.user);
+  const latestMeasurement = useMeasurementStore((s) => s.measurements.slice(-1)[0] || null);
+  const advice = buildStyleAdvice(user, latestMeasurement);
+
+  const openTutorialVideo = async (url: string) => {
     try {
-      await Linking.openURL(SCAN_TUTORIAL_URL);
+      await Linking.openURL(url);
     } catch {
-      Alert.alert('Unable to open video', `Open this link in your browser: ${SCAN_TUTORIAL_URL}`);
+      Alert.alert('Unable to open video', `Open this link in your browser: ${url}`);
     }
   };
 
@@ -60,16 +82,27 @@ export default function EducationHubScreen() {
         </Text>
       </View>
 
-      <View style={styles.videoCard}>
-        <Text style={styles.cardLabel}>Video tutorial</Text>
-        <Text style={styles.cardTitle}>How to prepare for an accurate scan</Text>
-        <Text style={styles.cardBody}>
-          Watch a walkthrough for fitted clothing, lighting, camera distance, front view, and side view capture.
-        </Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={openTutorialVideo}>
-          <Text style={styles.primaryButtonText}>Watch video</Text>
-        </TouchableOpacity>
+      <View style={styles.adviceCard}>
+        <Text style={styles.cardLabel}>Personal style engine</Text>
+        <Text style={styles.adviceTitle}>{advice.bodyType}</Text>
+        <Text style={styles.adviceBody}>{advice.bodyTypeReason}</Text>
+        <View style={styles.paletteRow}>
+          {advice.colorPalette.map((color) => (
+            <Text key={color} style={styles.paletteChip}>{color}</Text>
+          ))}
+        </View>
       </View>
+
+      {tutorialVideos.map((video) => (
+        <View key={video.title} style={styles.videoCard}>
+          <Text style={styles.cardLabel}>Video tutorial</Text>
+          <Text style={styles.cardTitle}>{video.title}</Text>
+          <Text style={styles.cardBody}>{video.body}</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => openTutorialVideo(video.url)}>
+            <Text style={styles.primaryButtonText}>Watch video</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
 
       <View style={styles.checklistCard}>
         <Text style={styles.cardLabel}>Quick scan checklist</Text>
@@ -88,6 +121,30 @@ export default function EducationHubScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Style and body guidance</Text>
+      <View style={styles.guideCard}>
+        <Text style={styles.guideLabel}>Fit recommendations</Text>
+        {advice.fitTips.map((tip) => (
+          <Text key={tip} style={styles.guideBody}>- {tip}</Text>
+        ))}
+      </View>
+      <View style={styles.guideCard}>
+        <Text style={styles.guideLabel}>Style ideas</Text>
+        {advice.styleIdeas.map((tip) => (
+          <Text key={tip} style={styles.guideBody}>- {tip}</Text>
+        ))}
+      </View>
+      <View style={styles.guideCard}>
+        <Text style={styles.guideLabel}>Wardrobe culture</Text>
+        {advice.wardrobeHabits.map((tip) => (
+          <Text key={tip} style={styles.guideBody}>- {tip}</Text>
+        ))}
+      </View>
+      <View style={styles.guideCard}>
+        <Text style={styles.guideLabel}>Shopping culture</Text>
+        {advice.shoppingRules.map((tip) => (
+          <Text key={tip} style={styles.guideBody}>- {tip}</Text>
+        ))}
+      </View>
       {guideSections.map((section) => (
         <View key={section.label} style={styles.guideCard}>
           <Text style={styles.guideLabel}>{section.label}</Text>
@@ -135,6 +192,41 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 18,
     marginBottom: 16,
+  },
+  adviceCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 18,
+    marginBottom: 16,
+  },
+  adviceTitle: {
+    color: Colors.text.primary,
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  adviceBody: {
+    color: Colors.text.secondary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  paletteRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  paletteChip: {
+    backgroundColor: '#E0F7F5',
+    borderRadius: 999,
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    textTransform: 'capitalize',
   },
   checklistCard: {
     backgroundColor: Colors.white,

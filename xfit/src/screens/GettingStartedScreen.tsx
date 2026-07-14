@@ -44,12 +44,12 @@ export default function GettingStartedScreen({ navigation }: any) {
       scrollRef.current?.scrollTo({ x: SCREEN_WIDTH * (activeIndex + 1), animated: true });
       setActiveIndex(activeIndex + 1);
     } else {
-      navigation.navigate('PrivacyConsent');
+      navigation.navigate('ProfileSetup');
     }
   };
 
   const handleSkip = () => {
-    navigation.navigate('PrivacyConsent');
+    navigation.navigate('ProfileSetup');
   };
 
   return (

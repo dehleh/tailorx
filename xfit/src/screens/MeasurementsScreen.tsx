@@ -110,6 +110,7 @@ export default function MeasurementsScreen({ navigation }: any) {
                 <Text style={styles.historyInfo}>
                   {m.accuracy?.anglesUsed?.length || '?'} angle(s)
                   {accuracy ? ` - ${accuracy}% confidence` : ''}
+                  {` - ${(m.source || 'free') === 'enterprise' ? 'Tailor invite' : 'Free scan'}`}
                 </Text>
               </View>
               <View style={styles.historyRight}>
@@ -179,6 +180,7 @@ export default function MeasurementsScreen({ navigation }: any) {
 
   const round1 = (n: number) => Math.round(n * 10) / 10;
   const convertToInch = (cm: number) => round1(cm / 2.54);
+  const sourceLabel = (latestMeasurement.source || 'free') === 'enterprise' ? 'Tailor invite scan' : 'Free scan';
 
   const displayValue = (cm: number) => {
     return unit === 'cm' ? `${round1(cm)} cm` : `${convertToInch(cm)} in`;
@@ -235,7 +237,7 @@ export default function MeasurementsScreen({ navigation }: any) {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Your Measurements</Text>
         <Text style={styles.headerSubtitle}>
-          Last scan: {lastScanDate.toLocaleDateString()}
+          Last scan: {lastScanDate.toLocaleDateString()} / {sourceLabel}
         </Text>
       </View>
 

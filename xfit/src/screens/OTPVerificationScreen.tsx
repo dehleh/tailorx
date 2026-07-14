@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { useAuthStore } from '../stores/authStore';
+import { useUserStore } from '../stores/userStore';
 import { generateId } from '../utils/helpers';
 import { deriveDisplayNameFromEmail } from '../utils/displayName';
 
@@ -79,6 +80,7 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
       if (!authState.isAuthenticated) {
         setIsLoading(false);
       }
+      await useUserStore.getState().syncRemoteProfile(email);
     } catch (e: any) {
       setIsLoading(false);
       setError('Network error — is the server running?');

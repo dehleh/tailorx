@@ -24,6 +24,10 @@ export const useAppInitialization = () => {
         
         // Load user data from storage
         await loadUser();
+        const authEmail = useAuthStore.getState().user?.email;
+        if (authEmail) {
+          await useUserStore.getState().syncRemoteProfile(authEmail);
+        }
         
         // Load measurements from storage
         await loadMeasurements();

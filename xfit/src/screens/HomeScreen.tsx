@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Colors } from '../constants/colors';
 import BrandLogo from '../components/BrandLogo';
 import { useMeasurementStore } from '../stores/measurementStore';
@@ -30,15 +30,7 @@ export default function HomeScreen({ navigation }: any) {
       return;
     }
 
-    Alert.alert(
-      'Free scan already used',
-      'You can keep using Tailor-X for body-type guidance, style ideas, color combinations, wardrobe culture, and shopping tips. To scan again, use an invite link from a tailor or fashion house.',
-      [
-        { text: 'View guides', onPress: openEducationHub },
-        { text: 'Use invite', onPress: () => navigation.navigate('EnterpriseInvite') },
-        { text: 'Close', style: 'cancel' },
-      ]
-    );
+    navigation.navigate('ScanLimit');
   };
 
   return (
@@ -126,6 +118,7 @@ export default function HomeScreen({ navigation }: any) {
                 <Text style={styles.chipAccuracy}>
                   {m.accuracy?.overallScore ? `${Math.round(m.accuracy.overallScore)}% confidence` : 'Scan'}
                 </Text>
+                <Text style={styles.chipSource}>{(m.source || 'free') === 'enterprise' ? 'Tailor invite scan' : 'Free scan'}</Text>
                 <Text style={styles.chipDate}>{timeAgo(m.date)}</Text>
                 <View style={styles.chipRow}>
                   {(['chest', 'waist', 'hips', 'shoulders'] as const).map((key) => {
@@ -360,6 +353,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text.light,
     marginBottom: 10,
+  },
+  chipSource: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E0F7F5',
+    borderRadius: 999,
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 8,
   },
   chipRow: {
     flexDirection: 'row',

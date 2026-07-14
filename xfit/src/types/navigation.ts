@@ -8,10 +8,12 @@ export type RootStackParamList = {
   EmailAuth: undefined;
   OTPVerification: { email: string; displayName?: string };
   GettingStarted: undefined;
+  ProfileSetup: undefined;
   PrivacyConsent: undefined;
   MainTabs: undefined;
   EnterpriseInvite: { inviteCode?: string } | undefined;
   EducationHub: undefined;
+  ScanLimit: undefined;
 };
 
 export type RootTabParamList = {
@@ -42,10 +44,12 @@ export type ScanStackParamList = {
     result: any;
     accuracyReport: any;
     measurementId?: string;
+    source?: 'free' | 'enterprise';
   };
   ScanResults: {
     result: any;
     accuracyReport: any;
     measurementId?: string;
+    source?: 'free' | 'enterprise';
   };
 };
