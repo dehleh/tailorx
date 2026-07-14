@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { Alert, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { useUserStore } from '../stores/userStore';
+import { useMeasurementStore } from '../stores/measurementStore';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 
 interface CheckItem {
   id: string;
@@ -57,6 +59,8 @@ export default function PreparationChecklistScreen({ navigation }: any) {
   const [items, setItems] = useState(initialItems);
   const userProfile = useUserStore((s) => s.user);
   const updateUser = useUserStore((s) => s.updateUser);
+  const measurements = useMeasurementStore((s) => s.measurements);
+  const activeEnterpriseSessionId = useEnterpriseStore((s) => s.activeSessionId);
   const [selectedGender, setSelectedGender] = useState<'male' | 'female' | 'other'>(
     (userProfile?.gender as 'male' | 'female' | 'other') || 'other'
   );
@@ -64,7 +68,11 @@ export default function PreparationChecklistScreen({ navigation }: any) {
   const allChecked = checkedCount === items.length;
   const genderSelected = ['male', 'female', 'other'].includes(selectedGender);
   const canStart = allChecked && genderSelected;
+  const freeScanUsed = measurements.some((m) => (m.source || 'free') === 'free');
+  const canUseScanAccess = Boolean(activeEnterpriseSessionId) || !freeScanUsed;
   const progress = Math.round((checkedCount / items.length) * 100);
+
+  const rootNavigation = navigation.getParent()?.getParent?.() || navigation.getParent?.() || navigation;
 
   const toggleItem = (id: string) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item)));
@@ -76,6 +84,19 @@ export default function PreparationChecklistScreen({ navigation }: any) {
   };
 
   const handleStart = () => {
+    if (!canUseScanAccess) {
+      Alert.alert(
+        'Free scan already used',
+        'A second scan needs an invite link from a tailor or fashion house. You can still use the education guides for body type, style, color, wardrobe, and shopping guidance.',
+        [
+          { text: 'View guides', onPress: () => rootNavigation.navigate('EducationHub') },
+          { text: 'Use invite', onPress: () => rootNavigation.navigate('EnterpriseInvite') },
+          { text: 'Close', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     navigation.navigate('Calibration');
   };
 
@@ -94,6 +115,23 @@ export default function PreparationChecklistScreen({ navigation }: any) {
 
         <Text style={styles.title}>Preparation checklist</Text>
         <Text style={styles.subtitle}>Make sure you're ready for the best scanning experience</Text>
+
+        {!canUseScanAccess ? (
+          <View style={styles.accessCard}>
+            <Text style={styles.accessTitle}>Free scan used</Text>
+            <Text style={styles.accessText}>
+              Use a tailor invite for another scan, or continue with fit and style guidance.
+            </Text>
+            <View style={styles.accessActions}>
+              <TouchableOpacity style={styles.accessButton} onPress={() => rootNavigation.navigate('EducationHub')}>
+                <Text style={styles.accessButtonText}>View guides</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.accessButtonSecondary} onPress={() => rootNavigation.navigate('EnterpriseInvite')}>
+                <Text style={styles.accessButtonSecondaryText}>Use invite</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         {/* Gender selector */}
         <View style={styles.genderSection}>
@@ -177,7 +215,13 @@ export default function PreparationChecklistScreen({ navigation }: any) {
           disabled={!canStart}
         >
           <Text style={styles.startButtonText}>
-            {!genderSelected ? 'Select Gender Above' : allChecked ? "I'm ready, Start Scan" : 'Complete Checklist First'}
+            {!genderSelected
+              ? 'Select Gender Above'
+              : !allChecked
+                ? 'Complete Checklist First'
+                : canUseScanAccess
+                  ? "I'm ready, Start Scan"
+                  : 'Use Invite or View Guides'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -232,6 +276,57 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     textAlign: 'center',
     marginBottom: 24,
+  },
+  accessCard: {
+    width: '100%',
+    backgroundColor: '#E0F7F5',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 185, 0.25)',
+    padding: 16,
+    marginBottom: 22,
+  },
+  accessTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 6,
+  },
+  accessText: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  accessActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  accessButton: {
+    flex: 1,
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  accessButtonText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  accessButtonSecondary: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  accessButtonSecondaryText: {
+    color: Colors.text.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   genderSection: {
     width: '100%',

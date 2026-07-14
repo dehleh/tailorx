@@ -10,6 +10,7 @@ import BrandLogo from '../components/BrandLogo';
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tailorx-pose-api-production.up.railway.app';
 
 export default function EmailAuthScreen({ navigation }: any) {
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -36,7 +37,10 @@ export default function EmailAuthScreen({ navigation }: any) {
       }
 
       setIsLoading(false);
-      navigation.navigate('OTPVerification', { email: email.trim().toLowerCase() });
+      navigation.navigate('OTPVerification', {
+        email: email.trim().toLowerCase(),
+        displayName: fullName.trim() || undefined,
+      });
     } catch (e: any) {
       setIsLoading(false);
       setError('Network error — is the server running?');
@@ -65,6 +69,17 @@ export default function EmailAuthScreen({ navigation }: any) {
           <Text style={styles.subtitle}>
             We'll send you a verification code to confirm your email
           </Text>
+
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.emailInput}
+            value={fullName}
+            onChangeText={setFullName}
+            placeholder="Your name"
+            placeholderTextColor={Colors.text.light}
+            autoCapitalize="words"
+            autoCorrect={false}
+          />
 
           <Text style={styles.label}>Email Address</Text>
           <TextInput
@@ -169,6 +184,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
+    marginBottom: 16,
     fontSize: 15,
     color: Colors.text.primary,
   },

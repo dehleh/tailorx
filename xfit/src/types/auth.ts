@@ -31,7 +31,7 @@ export type AuthStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
   EmailAuth: undefined;
-  OTPVerification: { email: string };
+  OTPVerification: { email: string; displayName?: string };
   GettingStarted: undefined;
   PrivacyConsent: undefined;
 };

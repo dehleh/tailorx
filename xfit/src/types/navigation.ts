@@ -6,12 +6,12 @@ export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
   EmailAuth: undefined;
-  OTPVerification: { email: string };
+  OTPVerification: { email: string; displayName?: string };
   GettingStarted: undefined;
   PrivacyConsent: undefined;
   MainTabs: undefined;
-  EnterpriseSetup: undefined;
   EnterpriseInvite: { inviteCode?: string } | undefined;
+  EducationHub: undefined;
 };
 
 export type RootTabParamList = {

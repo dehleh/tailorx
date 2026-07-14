@@ -481,6 +481,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           ...(result.measurements.roundSleeveElbow && { roundSleeveElbow: safe(result.measurements.roundSleeveElbow) }),
         },
         unit: user?.preferredUnit || 'cm',
+        source: activeEnterpriseSessionId ? 'enterprise' : 'free',
         images: allCaptures.map(c => c.imageUri),
         accuracy: {
           overallScore: result.overallAccuracy,

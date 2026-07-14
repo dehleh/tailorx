@@ -33,6 +33,7 @@ export interface BodyMeasurement {
     roundSleeveElbow?: number;  // Circumference at elbow
   };
   unit: 'cm' | 'inch';
+  source?: 'free' | 'enterprise';
   images?: string[];
   // Production accuracy metadata
   accuracy?: {

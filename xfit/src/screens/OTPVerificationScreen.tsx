@@ -7,12 +7,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { useAuthStore } from '../stores/authStore';
 import { generateId } from '../utils/helpers';
+import { deriveDisplayNameFromEmail } from '../utils/displayName';
 
 const CODE_LENGTH = 6;
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tailorx-pose-api-production.up.railway.app';
 
 export default function OTPVerificationScreen({ route, navigation }: any) {
-  const { email } = route.params;
+  const { email, displayName } = route.params;
   const [code, setCode] = useState<string[]>(new Array(CODE_LENGTH).fill(''));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -64,7 +65,7 @@ export default function OTPVerificationScreen({ route, navigation }: any) {
       await setUser({
         id: generateId(),
         email,
-        displayName: '',
+        displayName: data.displayName || data.name || displayName || deriveDisplayNameFromEmail(email),
         isOnboarded: false,
         isPrivacyAccepted: false,
         createdAt: new Date().toISOString(),

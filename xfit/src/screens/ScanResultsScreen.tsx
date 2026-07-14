@@ -23,6 +23,7 @@ import { AccuracyReport } from '../services/accuracyEngine';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
 import { useUserStore } from '../stores/userStore';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { lookupSize, SizeLookupResult } from '../services/sizeChartService';
 import { generateId } from '../utils/helpers';
 import ShareModal from '../components/ShareModal';
@@ -130,6 +131,7 @@ export default function ScanResultsScreen({
   const authUser = useAuthStore((s) => s.user);
   const userProfile = useUserStore((s) => s.user);
   const addMeasurement = useMeasurementStore((s) => s.addMeasurement);
+  const activeEnterpriseSessionId = useEnterpriseStore((s) => s.activeSessionId);
   const [unit, setUnit] = useState<'cm' | 'inch'>('cm');
   const [shareVisible, setShareVisible] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -264,6 +266,7 @@ export default function ScanResultsScreen({
       date: new Date(),
       measurements: result.measurements as any,
       unit,
+      source: activeEnterpriseSessionId ? 'enterprise' : 'free',
       accuracy: {
         overallScore: result.overallAccuracy,
         confidence: result.confidence,

@@ -1,19 +1,45 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Alert, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Colors } from '../constants/colors';
 import BrandLogo from '../components/BrandLogo';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { formatMeasurement, timeAgo } from '../utils/helpers';
+import { getDisplayName } from '../utils/displayName';
 
 export default function HomeScreen({ navigation }: any) {
   const measurements = useMeasurementStore((s) => s.measurements);
   const authUser = useAuthStore((s) => s.user);
   const activeInviteCode = useEnterpriseStore((s) => s.activeInviteCode);
+  const activeSessionId = useEnterpriseStore((s) => s.activeSessionId);
   const activeOrganizationName = useEnterpriseStore((s) => s.organizationName);
-  const displayName = authUser?.displayName || 'User';
+  const displayName = getDisplayName(authUser?.displayName, authUser?.email);
   const latestMeasurements = measurements.slice(-3).reverse();
+  const freeScanUsed = measurements.some((m) => (m.source || 'free') === 'free');
+  const hasLicensedSession = Boolean(activeSessionId);
+  const canStartScan = hasLicensedSession || !freeScanUsed;
+
+  const openEducationHub = () => {
+    navigation.navigate('EducationHub');
+  };
+
+  const handleStartScan = () => {
+    if (canStartScan) {
+      navigation.navigate('Scan');
+      return;
+    }
+
+    Alert.alert(
+      'Free scan already used',
+      'You can keep using Tailor-X for body-type guidance, style ideas, color combinations, wardrobe culture, and shopping tips. To scan again, use an invite link from a tailor or fashion house.',
+      [
+        { text: 'View guides', onPress: openEducationHub },
+        { text: 'Use invite', onPress: () => navigation.navigate('EnterpriseInvite') },
+        { text: 'Close', style: 'cancel' },
+      ]
+    );
+  };
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -38,16 +64,20 @@ export default function HomeScreen({ navigation }: any) {
       <TouchableOpacity
         style={styles.scanCard}
         activeOpacity={0.85}
-        onPress={() => navigation.navigate('Scan')}
+        onPress={handleStartScan}
       >
         <View style={styles.scanCardInner}>
           <View style={styles.scanCardDot} />
-          <Text style={styles.scanCardTitle}>Start New Scan</Text>
+          <Text style={styles.scanCardTitle}>{canStartScan ? 'Start New Scan' : 'Free Scan Used'}</Text>
           <Text style={styles.scanCardDesc}>
-            Quickly capture your measurements in under 5 minutes
+            {hasLicensedSession
+              ? 'Continue your licensed scan session for your tailor.'
+              : canStartScan
+                ? 'Quickly capture your measurements in under 5 minutes.'
+                : 'Use an invite link for another scan, or explore fit and style guidance.'}
           </Text>
           <View style={styles.scanCardButton}>
-            <Text style={styles.scanCardButtonText}>Begin Scanning</Text>
+            <Text style={styles.scanCardButtonText}>{canStartScan ? 'Begin Scanning' : 'Explore Guides'}</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -63,6 +93,18 @@ export default function HomeScreen({ navigation }: any) {
           {activeInviteCode
             ? `Active branded code: ${activeInviteCode}${activeOrganizationName ? ` for ${activeOrganizationName}` : ''}`
             : 'Load a branded invite code to start a licensed customer scan.'}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.guidesCard}
+        activeOpacity={0.85}
+        onPress={openEducationHub}
+      >
+        <Text style={styles.guidesEyebrow}>Fit education</Text>
+        <Text style={styles.guidesTitle}>Body type, colors, style, wardrobe, and shopping culture</Text>
+        <Text style={styles.guidesDesc}>
+          These guides stay available even after your free scan is used.
         </Text>
       </TouchableOpacity>
 
@@ -115,7 +157,7 @@ export default function HomeScreen({ navigation }: any) {
           <Text style={styles.helpIcon}>📚</Text>
           <Text style={styles.helpText}>Help and Tutorials</Text>
         </View>
-        <TouchableOpacity style={styles.tutorialButton}>
+        <TouchableOpacity style={styles.tutorialButton} onPress={openEducationHub}>
           <Text style={styles.tutorialButtonText}>View tutorials</Text>
         </TouchableOpacity>
       </View>
@@ -242,6 +284,35 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   enterpriseDesc: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    lineHeight: 19,
+  },
+  guidesCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    borderRadius: 16,
+    backgroundColor: '#E0F7F5',
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 185, 0.25)',
+  },
+  guidesEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: Colors.primary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  guidesTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 6,
+    lineHeight: 23,
+  },
+  guidesDesc: {
     fontSize: 13,
     color: Colors.text.secondary,
     lineHeight: 19,

@@ -17,8 +17,9 @@ import { useUserStore } from '../stores/userStore';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
+import { getDisplayName } from '../utils/displayName';
 
-const WEB_ADMIN_URL = 'https://admin.tailor-xfit.app';
+const WEB_ADMIN_URL = 'https://admin.tailorxfit.com';
 
 export default function ProfileScreen({ navigation }: any) {
   const user = useUserStore((state) => state.user);
@@ -50,19 +51,19 @@ export default function ProfileScreen({ navigation }: any) {
     if (user === null) {
       setUser({
         id: 'user_' + Date.now(),
-        name: '',
-        email: '',
+        name: getDisplayName(undefined, authUser?.email, ''),
+        email: authUser?.email || '',
         gender: 'other',
         preferredUnit: 'cm',
         createdAt: new Date(),
         measurementHistory: [],
       });
     }
-  }, [user]);
+  }, [authUser?.email, user]);
 
   const openEditModal = () => {
-    setEditName(user?.name || '');
-    setEditEmail(user?.email || '');
+    setEditName(user?.name || getDisplayName(authUser?.displayName, authUser?.email, ''));
+    setEditEmail(user?.email || authUser?.email || '');
     setEditGender(user?.gender || 'other');
     setEditHeight(user?.heightCm?.toString() || '');
     setEditWeight(user?.weightKg?.toString() || '');
@@ -84,7 +85,7 @@ export default function ProfileScreen({ navigation }: any) {
     }
 
     await updateUser({
-      name: editName.trim() || 'User',
+      name: editName.trim() || getDisplayName(authUser?.displayName, authUser?.email),
       email: editEmail.trim(),
       gender: editGender,
       heightCm: editHeight ? heightNum : undefined,
@@ -126,8 +127,8 @@ export default function ProfileScreen({ navigation }: any) {
     }
   };
 
-  const displayName = authUser?.displayName || user?.name || 'Set Up Profile';
-  const initials = (authUser?.displayName || user?.name || 'U')
+  const displayName = getDisplayName(authUser?.displayName || user?.name, authUser?.email, 'Set Up Profile');
+  const initials = (displayName || 'U')
     .split(' ')
     .map((n) => n[0])
     .join('')
@@ -215,9 +216,12 @@ export default function ProfileScreen({ navigation }: any) {
 
       <View style={styles.enterpriseSection}>
         <Text style={styles.enterpriseSectionTitle}>Enterprise Tools</Text>
-        <TouchableOpacity style={styles.enterpriseButton} onPress={() => navigation.navigate('EnterpriseSetup')}>
-          <Text style={styles.enterpriseButtonText}>🏢 Create Enterprise Workspace</Text>
-        </TouchableOpacity>
+        <View style={styles.enterpriseNotice}>
+          <Text style={styles.enterpriseNoticeTitle}>Organization setup is admin-only</Text>
+          <Text style={styles.enterpriseNoticeText}>
+            Tailor and fashion-house workspaces are created from the super admin web dashboard.
+          </Text>
+        </View>
         <TouchableOpacity style={styles.enterpriseButton} onPress={openAdminPortal}>
           <Text style={styles.enterpriseButtonText}>
             🌐 Open Admin Web Portal{organizationName ? ` (${organizationName})` : ''}
@@ -492,6 +496,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.text.primary,
     marginBottom: 12,
+  },
+  enterpriseNotice: {
+    backgroundColor: '#E0F7F5',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 185, 0.25)',
+  },
+  enterpriseNoticeTitle: {
+    color: Colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  enterpriseNoticeText: {
+    color: Colors.text.secondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   enterpriseButton: {
     backgroundColor: Colors.white,
