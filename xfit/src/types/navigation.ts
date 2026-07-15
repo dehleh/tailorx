@@ -45,11 +45,15 @@ export type ScanStackParamList = {
     accuracyReport: any;
     measurementId?: string;
     source?: 'free' | 'enterprise';
+    enterpriseSubmissionStatus?: 'draft' | 'submitted' | 'upload_failed';
+    organizationName?: string | null;
   };
   ScanResults: {
     result: any;
     accuracyReport: any;
     measurementId?: string;
     source?: 'free' | 'enterprise';
+    enterpriseSubmissionStatus?: 'draft' | 'submitted' | 'upload_failed';
+    organizationName?: string | null;
   };
 };

@@ -34,6 +34,19 @@ export interface BodyMeasurement {
   };
   unit: 'cm' | 'inch';
   source?: 'free' | 'enterprise';
+  enterprise?: {
+    sessionId?: string | null;
+    inviteCode?: string | null;
+    organizationId?: string | null;
+    organizationName?: string | null;
+    customerName?: string | null;
+    customerEmail?: string | null;
+    occasion?: string | null;
+    preferredFit?: string | null;
+    styleNotes?: string | null;
+    submissionStatus?: 'draft' | 'awaiting_review' | 'submitted' | 'upload_failed' | 'review_requested' | 'accepted';
+    submittedAt?: string | null;
+  };
   images?: string[];
   // Production accuracy metadata
   accuracy?: {

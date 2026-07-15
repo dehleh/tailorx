@@ -11,6 +11,8 @@
 
 import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -20,10 +22,12 @@ import {
 import { Colors } from '../constants/colors';
 import { MeasurementResult } from '../services/measurementEngine';
 import { AccuracyReport } from '../services/accuracyEngine';
+import EnterpriseProgressStepper from '../components/EnterpriseProgressStepper';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
 import { useUserStore } from '../stores/userStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
+import { enterpriseApi } from '../services/enterpriseApi';
 import { lookupSize, SizeLookupResult } from '../services/sizeChartService';
 import { buildStyleAdvice } from '../services/styleAdvisor';
 import { generateId } from '../utils/helpers';
@@ -37,6 +41,8 @@ interface ScanResultsScreenProps {
       accuracyReport: AccuracyReport;
       measurementId?: string;
       source?: 'free' | 'enterprise';
+      enterpriseSubmissionStatus?: 'draft' | 'submitted' | 'upload_failed';
+      organizationName?: string | null;
     };
   };
 }
@@ -133,7 +139,20 @@ export default function ScanResultsScreen({
   const authUser = useAuthStore((s) => s.user);
   const userProfile = useUserStore((s) => s.user);
   const addMeasurement = useMeasurementStore((s) => s.addMeasurement);
+  const updateMeasurement = useMeasurementStore((s) => s.updateMeasurement);
   const activeEnterpriseSessionId = useEnterpriseStore((s) => s.activeSessionId);
+  const activeOrganizationId = useEnterpriseStore((s) => s.organizationId);
+  const activeOrganizationName = useEnterpriseStore((s) => s.organizationName);
+  const organizationPrimaryColor = useEnterpriseStore((s) => s.organizationPrimaryColor);
+  const activeInviteCode = useEnterpriseStore((s) => s.activeInviteCode);
+  const activeEnterpriseCustomerName = useEnterpriseStore((s) => s.activeCustomerName);
+  const activeEnterpriseCustomerEmail = useEnterpriseStore((s) => s.activeCustomerEmail);
+  const activeOccasion = useEnterpriseStore((s) => s.activeOccasion);
+  const activePreferredFit = useEnterpriseStore((s) => s.activePreferredFit);
+  const activeStyleNotes = useEnterpriseStore((s) => s.activeStyleNotes);
+  const clearActiveEnterpriseSession = useEnterpriseStore((s) => s.clearActiveSession);
+  const recordEnterpriseSubmission = useEnterpriseStore((s) => s.recordSubmission);
+  const lastSubmission = useEnterpriseStore((s) => s.lastSubmission);
   const scanSource = route?.params?.source || (activeEnterpriseSessionId ? 'enterprise' : 'free');
   const [unit, setUnit] = useState<'cm' | 'inch'>('cm');
   const [shareVisible, setShareVisible] = useState(false);
@@ -142,6 +161,23 @@ export default function ScanResultsScreen({
   const [saved, setSaved] = useState(true);
   const generatedMeasurementId = useMemo(() => generateId(), []);
   const measurementId = route?.params?.measurementId || generatedMeasurementId;
+  const savedMeasurement = useMeasurementStore((s) => s.measurements.find((m) => m.id === measurementId));
+  const [enterpriseSubmissionStatus, setEnterpriseSubmissionStatus] = useState<'draft' | 'submitted' | 'upload_failed'>(
+    route?.params?.enterpriseSubmissionStatus ||
+      (scanSource === 'enterprise' && lastSubmission?.measurementId === measurementId
+        ? lastSubmission.status === 'upload_failed'
+          ? 'upload_failed'
+          : 'submitted'
+        : 'draft')
+  );
+  const [isSubmittingEnterprise, setIsSubmittingEnterprise] = useState(false);
+  const [enterpriseSubmitMessage, setEnterpriseSubmitMessage] = useState<string | null>(null);
+  const enterpriseDisplayName =
+    route?.params?.organizationName ||
+    activeOrganizationName ||
+    savedMeasurement?.enterprise?.organizationName ||
+    lastSubmission?.organizationName ||
+    'your tailor';
 
   const formatValue = (cm: number) => {
     return unit === 'cm'
@@ -275,6 +311,18 @@ export default function ScanResultsScreen({
       measurements: result.measurements as any,
       unit,
       source: scanSource,
+      enterprise: scanSource === 'enterprise' ? {
+        sessionId: activeEnterpriseSessionId,
+        inviteCode: activeInviteCode,
+        organizationId: activeOrganizationId,
+        organizationName: activeOrganizationName,
+        customerName: activeEnterpriseCustomerName,
+        customerEmail: activeEnterpriseCustomerEmail,
+        occasion: activeOccasion,
+        preferredFit: activePreferredFit,
+        styleNotes: activeStyleNotes,
+        submissionStatus: enterpriseSubmissionStatus,
+      } : undefined,
       accuracy: {
         overallScore: result.overallAccuracy,
         confidence: result.confidence,
@@ -293,6 +341,121 @@ export default function ScanResultsScreen({
       },
     });
     setSaved(true);
+  };
+
+  const submitEnterpriseResults = async () => {
+    if (!activeEnterpriseSessionId) {
+      Alert.alert(
+        'No active enterprise session',
+        'This scan is saved on your device, but there is no active licensed session to submit.'
+      );
+      return;
+    }
+
+    setIsSubmittingEnterprise(true);
+    setEnterpriseSubmitMessage(null);
+    try {
+      await enterpriseApi.completeSession(activeEnterpriseSessionId, {
+        measurementId,
+        accuracyScore: result.overallAccuracy,
+        measurements: result.measurements,
+        unit,
+        measurementProfile: (userProfile?.gender as 'male' | 'female' | 'other') || 'other',
+        confidence: result.confidence,
+        warnings: result.warnings,
+        metadata: {
+          anglesUsed: result.metadata.anglesUsed,
+          calibrationMethod: result.metadata.calibrationMethod,
+          circumferenceSource: result.metadata.circumferenceSource,
+          missingRequiredAngles: result.metadata.missingRequiredAngles,
+          calibrationConfidence: result.metadata.calibrationConfidence,
+          contourConfidenceByPart: result.metadata.contourConfidenceByPart,
+          anchorMeasurement: result.metadata.anchorMeasurement,
+          measurementCatalogVersion: result.metadata.measurementCatalogVersion,
+          measurementProfile: result.metadata.measurementProfile,
+          engineVersion: result.metadata.engineVersion,
+          processingTimeMs: result.metadata.processingTimeMs,
+          activeInviteCode,
+          customerName: activeEnterpriseCustomerName,
+          customerEmail: activeEnterpriseCustomerEmail,
+          occasion: activeOccasion,
+          preferredFit: activePreferredFit,
+          styleNotes: activeStyleNotes,
+          warnings: result.warnings,
+        },
+      });
+
+      const submittedAt = new Date().toISOString();
+      await recordEnterpriseSubmission({
+        sessionId: activeEnterpriseSessionId,
+        measurementId,
+        organizationId: activeOrganizationId,
+        organizationName: enterpriseDisplayName,
+        customerName: activeEnterpriseCustomerName,
+        customerEmail: activeEnterpriseCustomerEmail,
+        inviteCode: activeInviteCode,
+        status: 'submitted',
+        submittedAt,
+        accuracyScore: result.overallAccuracy,
+        message: 'Awaiting tailor review',
+      });
+      await updateMeasurement(measurementId, {
+        enterprise: {
+          ...(savedMeasurement?.enterprise || {}),
+          sessionId: activeEnterpriseSessionId,
+          inviteCode: activeInviteCode,
+          organizationId: activeOrganizationId,
+          organizationName: enterpriseDisplayName,
+          customerName: activeEnterpriseCustomerName,
+          customerEmail: activeEnterpriseCustomerEmail,
+          occasion: activeOccasion,
+          preferredFit: activePreferredFit,
+          styleNotes: activeStyleNotes,
+          submissionStatus: 'submitted',
+          submittedAt,
+        },
+      });
+      await clearActiveEnterpriseSession();
+      setEnterpriseSubmissionStatus('submitted');
+      setEnterpriseSubmitMessage('Submitted to the tailor dashboard and awaiting review.');
+      Alert.alert('Submitted', `Your measurements have been sent to ${enterpriseDisplayName}.`);
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || 'Upload failed. Your scan is saved locally; try again when your connection is stable.';
+      await recordEnterpriseSubmission({
+        sessionId: activeEnterpriseSessionId,
+        measurementId,
+        organizationId: activeOrganizationId,
+        organizationName: enterpriseDisplayName,
+        customerName: activeEnterpriseCustomerName,
+        customerEmail: activeEnterpriseCustomerEmail,
+        inviteCode: activeInviteCode,
+        status: 'upload_failed',
+        submittedAt: new Date().toISOString(),
+        accuracyScore: result.overallAccuracy,
+        message,
+      });
+      await updateMeasurement(measurementId, {
+        enterprise: {
+          ...(savedMeasurement?.enterprise || {}),
+          sessionId: activeEnterpriseSessionId,
+          inviteCode: activeInviteCode,
+          organizationId: activeOrganizationId,
+          organizationName: enterpriseDisplayName,
+          customerName: activeEnterpriseCustomerName,
+          customerEmail: activeEnterpriseCustomerEmail,
+          occasion: activeOccasion,
+          preferredFit: activePreferredFit,
+          styleNotes: activeStyleNotes,
+          submissionStatus: 'upload_failed',
+          submittedAt: null,
+        },
+      });
+      setEnterpriseSubmissionStatus('upload_failed');
+      setEnterpriseSubmitMessage(message);
+      Alert.alert('Upload saved for retry', message);
+    } finally {
+      setIsSubmittingEnterprise(false);
+    }
   };
 
   const handleRescan = () => {
@@ -321,9 +484,66 @@ export default function ScanResultsScreen({
         <View style={styles.securityNotice}>
           <Text style={styles.securityIcon}>🔒</Text>
           <Text style={styles.securityText}>
-            Your data is encrypted and secure. Only you can share it.
+            {scanSource === 'enterprise'
+              ? 'Enterprise submission sends derived measurements, confidence, and fit notes. Captured photos are not sent in the dashboard payload.'
+              : 'Your data is encrypted and secure. Only you can share it.'}
           </Text>
         </View>
+
+        {scanSource === 'enterprise' && (
+          <View style={[styles.enterpriseSubmitCard, organizationPrimaryColor ? { borderColor: organizationPrimaryColor } : null]}>
+            <Text style={styles.enterpriseSubmitLabel}>Tailor dashboard submission</Text>
+            <Text style={styles.enterpriseSubmitTitle}>
+              {enterpriseSubmissionStatus === 'submitted'
+                ? `Submitted to ${enterpriseDisplayName}`
+                : enterpriseSubmissionStatus === 'upload_failed'
+                  ? 'Upload needs retry'
+                  : `Review before sending to ${enterpriseDisplayName}`}
+            </Text>
+            <Text style={styles.enterpriseSubmitText}>
+              {enterpriseSubmitMessage ||
+                (enterpriseSubmissionStatus === 'submitted'
+                  ? 'Your tailor can now review the measurements and request a rescan if needed.'
+                  : 'Confirm the measurements, confidence badges, and warnings below before submitting.')}
+            </Text>
+            <EnterpriseProgressStepper
+              activeStep={enterpriseSubmissionStatus === 'submitted' ? 'submit' : 'review'}
+              completedSteps={enterpriseSubmissionStatus === 'submitted'
+                ? ['profile', 'front', 'side', 'review', 'submit']
+                : ['profile', 'front', 'side']}
+              tintColor={organizationPrimaryColor}
+            />
+            {(activeOccasion || activePreferredFit || activeStyleNotes || savedMeasurement?.enterprise?.occasion) && (
+              <View style={styles.enterpriseNotesBox}>
+                <Text style={styles.enterpriseNotesTitle}>Fit request</Text>
+                <Text style={styles.enterpriseNotesText}>Occasion: {activeOccasion || savedMeasurement?.enterprise?.occasion || 'Not specified'}</Text>
+                <Text style={styles.enterpriseNotesText}>Preferred fit: {activePreferredFit || savedMeasurement?.enterprise?.preferredFit || 'Regular'}</Text>
+                {(activeStyleNotes || savedMeasurement?.enterprise?.styleNotes) ? (
+                  <Text style={styles.enterpriseNotesText}>Notes: {activeStyleNotes || savedMeasurement?.enterprise?.styleNotes}</Text>
+                ) : null}
+              </View>
+            )}
+            {enterpriseSubmissionStatus !== 'submitted' ? (
+              <TouchableOpacity
+                style={[styles.enterpriseSubmitButton, isSubmittingEnterprise && styles.enterpriseSubmitButtonDisabled]}
+                onPress={submitEnterpriseResults}
+                disabled={isSubmittingEnterprise}
+              >
+                {isSubmittingEnterprise ? (
+                  <ActivityIndicator color={Colors.white} />
+                ) : (
+                  <Text style={styles.enterpriseSubmitButtonText}>
+                    {enterpriseSubmissionStatus === 'upload_failed' ? 'Retry dashboard upload' : 'Submit to tailor dashboard'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.enterpriseSubmittedPill}>
+                <Text style={styles.enterpriseSubmittedText}>Awaiting tailor review</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Body silhouette */}
         <View style={styles.silhouetteSection}>
@@ -651,6 +871,83 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.text.secondary,
     lineHeight: 18,
+  },
+  enterpriseSubmitCard: {
+    backgroundColor: Colors.surface,
+    marginHorizontal: 20,
+    marginBottom: 18,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+  },
+  enterpriseSubmitLabel: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  enterpriseSubmitTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  enterpriseSubmitText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  enterpriseNotesBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  enterpriseNotesTitle: {
+    color: Colors.text.primary,
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  enterpriseNotesText: {
+    color: Colors.text.secondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 2,
+  },
+  enterpriseSubmitButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  enterpriseSubmitButtonDisabled: {
+    opacity: 0.7,
+  },
+  enterpriseSubmitButtonText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  enterpriseSubmittedPill: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  enterpriseSubmittedText: {
+    color: '#047857',
+    fontSize: 13,
+    fontWeight: '800',
   },
   silhouetteSection: {
     alignItems: 'center',

@@ -35,8 +35,12 @@ export default function ProfileScreen({ navigation }: any) {
   const authUser = useAuthStore((state) => state.user);
   const updateAuthUser = useAuthStore((state) => state.updateUser);
   const logout = useAuthStore((state) => state.logout);
+  const enterpriseRole = useEnterpriseStore((state) => state.role);
   const organizationId = useEnterpriseStore((state) => state.organizationId);
   const organizationName = useEnterpriseStore((state) => state.organizationName);
+  const activeInviteCode = useEnterpriseStore((state) => state.activeInviteCode);
+  const activeSessionId = useEnterpriseStore((state) => state.activeSessionId);
+  const lastSubmission = useEnterpriseStore((state) => state.lastSubmission);
   const clearEnterpriseContext = useEnterpriseStore((state) => state.clearContext);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -170,6 +174,8 @@ export default function ProfileScreen({ navigation }: any) {
 
   const profileComplete =
     !!user?.name && !!user?.heightCm && !!user?.country && user?.gender !== 'other';
+  const isEnterpriseAdmin = ['org_owner', 'org_admin', 'staff', 'super_admin'].includes(enterpriseRole);
+  const enterpriseMeasurements = measurements.filter((m) => (m.source || 'free') === 'enterprise');
 
   return (
     <ScrollView style={styles.container}>
@@ -258,6 +264,45 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
       </View>
 
+      <View style={styles.enterpriseClientSection}>
+        <Text style={styles.enterpriseSectionTitle}>Linked Fashion Houses</Text>
+        <View style={styles.enterpriseClientCard}>
+          <Text style={styles.enterpriseClientLabel}>
+            {activeSessionId ? 'Active licensed session' : lastSubmission ? 'Latest enterprise submission' : activeInviteCode ? 'Invite loaded' : 'No active invite'}
+          </Text>
+          <Text style={styles.enterpriseClientTitle}>
+            {organizationName || lastSubmission?.organizationName || 'No fashion house linked'}
+          </Text>
+          <Text style={styles.enterpriseClientText}>
+            {activeSessionId
+              ? 'Finish the scan and review the results before submitting to the tailor dashboard.'
+              : lastSubmission
+                ? `${lastSubmission.status.replace('_', ' ')} - ${lastSubmission.message || 'Awaiting tailor review'}`
+                : activeInviteCode
+                  ? `Invite code ${activeInviteCode} is ready for a licensed scan.`
+                  : 'Open a tailor invite link to connect a fashion house.'}
+          </Text>
+          <Text style={styles.enterpriseClientMeta}>
+            Enterprise scans on this device: {enterpriseMeasurements.length}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.trustSection}>
+        <Text style={styles.enterpriseSectionTitle}>Privacy and Trust Controls</Text>
+        <View style={styles.trustCard}>
+          <Text style={styles.trustText}>Enterprise completions share derived measurements, confidence, selected fit notes, and metadata with the linked fashion house.</Text>
+          <Text style={styles.trustText}>Captured photos stay out of the enterprise completion payload.</Text>
+          <Text style={styles.trustText}>You can clear the active enterprise context on this device at any time.</Text>
+          <TouchableOpacity
+            style={styles.deletionButton}
+            onPress={() => Alert.alert('Deletion request', 'Contact support@tailorxfit.com to request deletion from server-side enterprise records.')}
+          >
+            <Text style={styles.deletionButtonText}>Request data deletion</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <View style={styles.enterpriseSection}>
         <Text style={styles.enterpriseSectionTitle}>Enterprise Tools</Text>
         <View style={styles.enterpriseNotice}>
@@ -266,11 +311,13 @@ export default function ProfileScreen({ navigation }: any) {
             Tailor and fashion-house workspaces are created from the super admin web dashboard.
           </Text>
         </View>
-        <TouchableOpacity style={styles.enterpriseButton} onPress={openAdminPortal}>
-          <Text style={styles.enterpriseButtonText}>
-            🌐 Open Admin Web Portal{organizationName ? ` (${organizationName})` : ''}
-          </Text>
-        </TouchableOpacity>
+        {isEnterpriseAdmin ? (
+          <TouchableOpacity style={styles.enterpriseButton} onPress={openAdminPortal}>
+            <Text style={styles.enterpriseButtonText}>
+              🌐 Open Admin Web Portal{organizationName ? ` (${organizationName})` : ''}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity style={styles.enterpriseButton} onPress={() => navigation.navigate('EnterpriseInvite')}>
           <Text style={styles.enterpriseButtonText}>🔗 Open Branded Invite Flow</Text>
         </TouchableOpacity>
@@ -583,7 +630,71 @@ const styles = StyleSheet.create({
   infoSection: {
     marginHorizontal: 20,
     marginBottom: 20,
-  },  enterpriseSection: {
+  },
+  enterpriseClientSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  enterpriseClientCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 16,
+  },
+  enterpriseClientLabel: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  enterpriseClientTitle: {
+    color: Colors.text.primary,
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  enterpriseClientText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+  enterpriseClientMeta: {
+    color: Colors.text.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  trustSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  trustCard: {
+    backgroundColor: Colors.secondary,
+    borderRadius: 14,
+    padding: 16,
+  },
+  trustText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  deletionButton: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  deletionButtonText: {
+    color: Colors.secondary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  enterpriseSection: {
     paddingHorizontal: 20,
     marginBottom: 24,
   },
@@ -633,7 +744,8 @@ const styles = StyleSheet.create({
   enterpriseResetText: {
     color: Colors.text.secondary,
     fontSize: 13,
-  },  infoCard: {
+  },
+  infoCard: {
     backgroundColor: Colors.white,
     padding: 14,
     borderRadius: 12,

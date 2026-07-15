@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
+import EnterpriseProgressStepper from '../components/EnterpriseProgressStepper';
 import { useUserStore } from '../stores/userStore';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
+import { useAuthStore } from '../stores/authStore';
 
 interface CheckItem {
   id: string;
@@ -53,6 +55,24 @@ const initialItems: CheckItem[] = [
     hintColor: Colors.primary,
     checked: false,
   },
+  {
+    id: 'angles',
+    icon: '2',
+    title: 'Front and side views',
+    description: 'Both angles are required for circumference measurements',
+    hint: 'Side view gives depth for chest, waist, hips, thigh, and calf',
+    hintColor: Colors.primary,
+    checked: false,
+  },
+  {
+    id: 'review',
+    icon: 'OK',
+    title: 'Review before submit',
+    description: 'Check confidence and warnings before sending to a tailor',
+    hint: 'Enterprise scans are submitted after your review',
+    hintColor: Colors.success,
+    checked: false,
+  },
 ];
 
 export default function PreparationChecklistScreen({ navigation }: any) {
@@ -60,19 +80,37 @@ export default function PreparationChecklistScreen({ navigation }: any) {
   const userProfile = useUserStore((s) => s.user);
   const updateUser = useUserStore((s) => s.updateUser);
   const measurements = useMeasurementStore((s) => s.measurements);
+  const authUser = useAuthStore((s) => s.user);
   const activeEnterpriseSessionId = useEnterpriseStore((s) => s.activeSessionId);
+  const activeEnterpriseName = useEnterpriseStore((s) => s.organizationName);
+  const activeInviteCode = useEnterpriseStore((s) => s.activeInviteCode);
+  const activeCustomerName = useEnterpriseStore((s) => s.activeCustomerName);
+  const organizationPrimaryColor = useEnterpriseStore((s) => s.organizationPrimaryColor);
   const [selectedGender, setSelectedGender] = useState<'male' | 'female' | 'other'>(
     (userProfile?.gender as 'male' | 'female' | 'other') || 'other'
   );
   const checkedCount = items.filter((i) => i.checked).length;
   const allChecked = checkedCount === items.length;
   const genderSelected = ['male', 'female', 'other'].includes(selectedGender);
-  const canStart = allChecked && genderSelected;
   const freeScanUsed = measurements.some((m) => (m.source || 'free') === 'free');
   const canUseScanAccess = Boolean(activeEnterpriseSessionId) || !freeScanUsed;
+  const isEnterpriseScan = Boolean(activeEnterpriseSessionId);
+  const profileReady = Boolean(userProfile?.heightCm && userProfile?.name && (userProfile?.email || authUser?.email));
+  const privacyReady = Boolean(authUser?.isPrivacyAccepted);
+  const enterpriseReady = !isEnterpriseScan || (profileReady && privacyReady && activeEnterpriseSessionId);
+  const canStart = allChecked && genderSelected && canUseScanAccess && enterpriseReady;
   const progress = Math.round((checkedCount / items.length) * 100);
 
   const rootNavigation = navigation.getParent()?.getParent?.() || navigation.getParent?.() || navigation;
+  const startButtonLabel = !genderSelected
+    ? 'Select Gender Above'
+    : !canUseScanAccess
+      ? 'Use Invite or View Guides'
+      : !enterpriseReady
+        ? 'Complete Enterprise Readiness'
+        : !allChecked
+          ? 'Complete Checklist First'
+          : "I'm ready, Start Scan";
 
   const toggleItem = (id: string) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item)));
@@ -107,6 +145,32 @@ export default function PreparationChecklistScreen({ navigation }: any) {
 
         <Text style={styles.title}>Preparation checklist</Text>
         <Text style={styles.subtitle}>Make sure you're ready for the best scanning experience</Text>
+
+        {isEnterpriseScan ? (
+          <View style={[styles.enterpriseCard, organizationPrimaryColor ? { borderColor: organizationPrimaryColor } : null]}>
+            <Text style={styles.enterpriseEyebrow}>Licensed client scan</Text>
+            <Text style={styles.enterpriseTitle}>Scanning for {activeEnterpriseName || 'your fashion house'}</Text>
+            <Text style={styles.enterpriseText}>
+              {activeCustomerName || 'Client'} will review the measurement summary before it is sent to the tailor dashboard.
+            </Text>
+            <EnterpriseProgressStepper
+              activeStep="profile"
+              completedSteps={profileReady && privacyReady ? ['profile'] : []}
+              tintColor={organizationPrimaryColor}
+            />
+            <View style={styles.readinessGrid}>
+              <Text style={[styles.readinessPill, profileReady && styles.readinessPillOk]}>
+                Profile {profileReady ? 'ready' : 'incomplete'}
+              </Text>
+              <Text style={[styles.readinessPill, privacyReady && styles.readinessPillOk]}>
+                Privacy {privacyReady ? 'accepted' : 'required'}
+              </Text>
+              <Text style={[styles.readinessPill, activeInviteCode && styles.readinessPillOk]}>
+                Invite {activeInviteCode ? 'linked' : 'missing'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {!canUseScanAccess ? (
           <View style={styles.accessCard}>
@@ -206,15 +270,7 @@ export default function PreparationChecklistScreen({ navigation }: any) {
           activeOpacity={0.8}
           disabled={!canStart}
         >
-          <Text style={styles.startButtonText}>
-            {!genderSelected
-              ? 'Select Gender Above'
-              : !allChecked
-                ? 'Complete Checklist First'
-                : canUseScanAccess
-                  ? "I'm ready, Start Scan"
-                  : 'Use Invite or View Guides'}
-          </Text>
+          <Text style={styles.startButtonText}>{startButtonLabel}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -319,6 +375,57 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontSize: 13,
     fontWeight: '700',
+  },
+  enterpriseCard: {
+    width: '100%',
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    padding: 16,
+    marginBottom: 22,
+  },
+  enterpriseEyebrow: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  enterpriseTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  enterpriseText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  readinessGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  readinessPill: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    color: Colors.text.secondary,
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  readinessPillOk: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#BBF7D0',
+    color: '#047857',
   },
   genderSection: {
     width: '100%',

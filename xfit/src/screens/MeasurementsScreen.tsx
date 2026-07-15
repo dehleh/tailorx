@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useUserStore } from '../stores/userStore';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { BodyMeasurement } from '../types/measurements';
 
 export default function MeasurementsScreen({ navigation }: any) {
@@ -27,6 +28,8 @@ export default function MeasurementsScreen({ navigation }: any) {
   const loadMeasurements = useMeasurementStore((state) => state.loadMeasurements);
   const deleteMeasurement = useMeasurementStore((state) => state.deleteMeasurement);
   const user = useUserStore((state) => state.user);
+  const activeInviteCode = useEnterpriseStore((state) => state.activeInviteCode);
+  const activeOrganizationName = useEnterpriseStore((state) => state.organizationName);
 
   useEffect(() => {
     loadMeasurements();
@@ -60,19 +63,27 @@ export default function MeasurementsScreen({ navigation }: any) {
 
   if (measurements.length === 0) {
     return (
-      <View style={[styles.container, styles.centered]}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.emptyContent}>
         <Text style={styles.emptyIcon}>📏</Text>
-        <Text style={styles.emptyTitle}>No Measurements Yet</Text>
+        <Text style={styles.emptyTitle}>No measurements yet</Text>
         <Text style={styles.emptySubtitle}>
-          Take your first body scan to see your measurements here.
+          {activeInviteCode
+            ? `Your ${activeOrganizationName || 'tailor'} invite is ready. Complete a licensed scan to create the first fitting record.`
+            : 'Take your first body scan to see measurements, confidence, and fit guidance here.'}
         </Text>
         <TouchableOpacity
           style={styles.primaryButton}
           onPress={() => navigation.navigate('Scan')}
         >
-          <Text style={styles.primaryButtonText}>📸 Start First Scan</Text>
+          <Text style={styles.primaryButtonText}>{activeInviteCode ? 'Start licensed scan' : 'Start first scan'}</Text>
         </TouchableOpacity>
-      </View>
+        <TouchableOpacity
+          style={styles.emptySecondaryButton}
+          onPress={() => navigation.navigate('EnterpriseInvite')}
+        >
+          <Text style={styles.emptySecondaryText}>Use a tailor invite</Text>
+        </TouchableOpacity>
+      </ScrollView>
     );
   }
 
@@ -110,7 +121,9 @@ export default function MeasurementsScreen({ navigation }: any) {
                 <Text style={styles.historyInfo}>
                   {m.accuracy?.anglesUsed?.length || '?'} angle(s)
                   {accuracy ? ` - ${accuracy}% confidence` : ''}
-                  {` - ${(m.source || 'free') === 'enterprise' ? 'Tailor invite' : 'Free scan'}`}
+                  {` - ${(m.source || 'free') === 'enterprise'
+                    ? `${m.enterprise?.organizationName || 'Tailor invite'} (${m.enterprise?.submissionStatus || 'draft'})`
+                    : 'Free scan'}`}
                 </Text>
               </View>
               <View style={styles.historyRight}>
@@ -180,7 +193,9 @@ export default function MeasurementsScreen({ navigation }: any) {
 
   const round1 = (n: number) => Math.round(n * 10) / 10;
   const convertToInch = (cm: number) => round1(cm / 2.54);
-  const sourceLabel = (latestMeasurement.source || 'free') === 'enterprise' ? 'Tailor invite scan' : 'Free scan';
+  const sourceLabel = (latestMeasurement.source || 'free') === 'enterprise'
+    ? `${latestMeasurement.enterprise?.organizationName || 'Tailor invite'} scan`
+    : 'Free scan';
 
   const displayValue = (cm: number) => {
     return unit === 'cm' ? `${round1(cm)} cm` : `${convertToInch(cm)} in`;
@@ -240,6 +255,22 @@ export default function MeasurementsScreen({ navigation }: any) {
           Last scan: {lastScanDate.toLocaleDateString()} / {sourceLabel}
         </Text>
       </View>
+
+      {(latestMeasurement.source || 'free') === 'enterprise' && (
+        <View style={styles.enterpriseBanner}>
+          <Text style={styles.enterpriseBannerLabel}>Enterprise fitting record</Text>
+          <Text style={styles.enterpriseBannerTitle}>
+            {latestMeasurement.enterprise?.submissionStatus === 'submitted'
+              ? 'Submitted to tailor dashboard'
+              : latestMeasurement.enterprise?.submissionStatus === 'upload_failed'
+                ? 'Upload failed - retry from results'
+                : 'Saved as draft'}
+          </Text>
+          <Text style={styles.enterpriseBannerText}>
+            Fashion house: {latestMeasurement.enterprise?.organizationName || 'Not specified'}
+          </Text>
+        </View>
+      )}
 
       {/* Scan confidence banner */}
       {accuracy && (
@@ -340,6 +371,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  emptyContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
   loadingText: {
     marginTop: 12,
     fontSize: 15,
@@ -373,6 +410,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  emptySecondaryButton: {
+    marginTop: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.white,
+  },
+  emptySecondaryText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
   header: {
     padding: 20,
     backgroundColor: Colors.white,
@@ -387,6 +438,34 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 14,
     color: Colors.text.secondary,
+  },
+  enterpriseBanner: {
+    backgroundColor: Colors.surface,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  enterpriseBannerLabel: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  enterpriseBannerTitle: {
+    color: Colors.text.primary,
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  enterpriseBannerText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
   accuracyBanner: {
     marginHorizontal: 20,

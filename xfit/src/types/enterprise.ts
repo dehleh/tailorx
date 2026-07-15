@@ -298,12 +298,42 @@ export interface EnterpriseContext {
   role: EnterpriseRole;
   organizationId: string | null;
   organizationName: string | null;
+  organizationPrimaryColor: string | null;
   adminUserId: string | null;
   licenseId: string | null;
   activeInviteCode: string | null;
+  activeInviteLabel: string | null;
+  activeInviteHeadline: string | null;
+  activeInviteImprint: string | null;
   activeSessionId: string | null;
   activeCustomerEmail: string | null;
   activeCustomerName: string | null;
+  activeOccasion: string | null;
+  activePreferredFit: string | null;
+  activeStyleNotes: string | null;
+  lastSubmission: EnterpriseSubmissionState | null;
+}
+
+export type EnterpriseSubmissionStatus =
+  | 'draft'
+  | 'awaiting_review'
+  | 'submitted'
+  | 'upload_failed'
+  | 'review_requested'
+  | 'accepted';
+
+export interface EnterpriseSubmissionState {
+  sessionId: string;
+  measurementId?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  inviteCode?: string | null;
+  status: EnterpriseSubmissionStatus;
+  submittedAt?: string | null;
+  accuracyScore?: number | null;
+  message?: string | null;
 }
 
 export interface AdminAuthResult {

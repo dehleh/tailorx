@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
+import EnterpriseProgressStepper from '../components/EnterpriseProgressStepper';
+import { useEnterpriseStore } from '../stores/enterpriseStore';
 
 const funFacts = [
   'Did you know? We use AI to detect over 30 body landmarks and estimate scan confidence.',
@@ -11,6 +13,8 @@ const funFacts = [
 
 export default function ProcessingScreen({ route, navigation }: any) {
   const { result, accuracyReport, source } = route.params;
+  const organizationName = useEnterpriseStore((s) => s.organizationName);
+  const organizationPrimaryColor = useEnterpriseStore((s) => s.organizationPrimaryColor);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<'processing' | 'complete'>('processing');
   const [factIndex] = useState(() => Math.floor(Math.random() * funFacts.length));
@@ -56,8 +60,21 @@ export default function ProcessingScreen({ route, navigation }: any) {
           {stage === 'complete' ? 'Processing Complete' : 'Processing Your Scan'}
         </Text>
         <Text style={styles.subtitle}>
-          {stage === 'complete' ? 'Finalizing results' : 'Calculating measurements...'}
+          {stage === 'complete'
+            ? source === 'enterprise' ? 'Preparing client review' : 'Finalizing results'
+            : source === 'enterprise' ? `Calculating measurements for ${organizationName || 'your tailor'}...` : 'Calculating measurements...'}
         </Text>
+
+        {source === 'enterprise' && (
+          <View style={styles.enterpriseProgressCard}>
+            <Text style={styles.enterpriseLabel}>Licensed scan workflow</Text>
+            <EnterpriseProgressStepper
+              activeStep="review"
+              completedSteps={['profile', 'front', 'side']}
+              tintColor={organizationPrimaryColor}
+            />
+          </View>
+        )}
 
         {/* Progress bar */}
         <View style={styles.progressSection}>
@@ -125,6 +142,24 @@ const styles = StyleSheet.create({
   progressSection: {
     width: '100%',
     marginBottom: 40,
+  },
+  enterpriseProgressCard: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 14,
+    marginBottom: 28,
+  },
+  enterpriseLabel: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: 6,
   },
   progressBar: {
     width: '100%',

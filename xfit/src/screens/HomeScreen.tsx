@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Colors } from '../constants/colors';
 import BrandLogo from '../components/BrandLogo';
+import EnterpriseProgressStepper from '../components/EnterpriseProgressStepper';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useAuthStore } from '../stores/authStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
@@ -14,10 +15,16 @@ export default function HomeScreen({ navigation }: any) {
   const activeInviteCode = useEnterpriseStore((s) => s.activeInviteCode);
   const activeSessionId = useEnterpriseStore((s) => s.activeSessionId);
   const activeOrganizationName = useEnterpriseStore((s) => s.organizationName);
+  const organizationPrimaryColor = useEnterpriseStore((s) => s.organizationPrimaryColor);
+  const activeInviteHeadline = useEnterpriseStore((s) => s.activeInviteHeadline);
+  const activeCustomerName = useEnterpriseStore((s) => s.activeCustomerName);
+  const lastSubmission = useEnterpriseStore((s) => s.lastSubmission);
   const displayName = getDisplayName(authUser?.displayName, authUser?.email);
   const latestMeasurements = measurements.slice(-3).reverse();
   const freeScanUsed = measurements.some((m) => (m.source || 'free') === 'free');
   const hasLicensedSession = Boolean(activeSessionId);
+  const hasEnterpriseContext = Boolean(activeInviteCode || activeSessionId || lastSubmission);
+  const enterpriseBrandName = activeOrganizationName || lastSubmission?.organizationName || 'your fashion house';
   const canStartScan = hasLicensedSession || !freeScanUsed;
 
   const openEducationHub = () => {
@@ -52,6 +59,43 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
+      {hasEnterpriseContext ? (
+        <View style={[styles.enterpriseModeCard, organizationPrimaryColor ? { borderColor: organizationPrimaryColor } : null]}>
+          <View style={styles.modeHeaderRow}>
+            <View style={styles.modeText}>
+              <Text style={styles.modeEyebrow}>Enterprise client mode</Text>
+              <Text style={styles.modeTitle}>{enterpriseBrandName}</Text>
+              <Text style={styles.modeDesc}>
+                {hasLicensedSession
+                  ? `${activeCustomerName || displayName}, your licensed scan session is ready.`
+                  : lastSubmission
+                    ? lastSubmission.status === 'upload_failed'
+                      ? 'Your last enterprise upload needs attention.'
+                      : 'Your latest enterprise scan has been submitted for tailor review.'
+                    : activeInviteHeadline || 'Invite loaded. Start a licensed scan when you are ready.'}
+              </Text>
+            </View>
+            <View style={[styles.modeBadge, organizationPrimaryColor ? { backgroundColor: organizationPrimaryColor } : null]}>
+              <Text style={styles.modeBadgeText}>{hasLicensedSession ? 'LIVE' : lastSubmission ? 'REVIEW' : 'INVITE'}</Text>
+            </View>
+          </View>
+          <EnterpriseProgressStepper
+            activeStep={lastSubmission ? 'submit' : 'profile'}
+            completedSteps={lastSubmission ? ['profile', 'front', 'side', 'review', 'submit'] : []}
+            compact
+            tintColor={organizationPrimaryColor}
+          />
+        </View>
+      ) : (
+        <View style={styles.personalModeCard}>
+          <Text style={styles.modeEyebrow}>Personal fit mode</Text>
+          <Text style={styles.modeTitle}>Free scan plus style guidance</Text>
+          <Text style={styles.modeDesc}>
+            You get one free scan. Education, body-type insight, color guidance, wardrobe culture, and shopping tips remain available.
+          </Text>
+        </View>
+      )}
+
       {/* Start New Scan Card */}
       <TouchableOpacity
         style={styles.scanCard}
@@ -60,10 +104,12 @@ export default function HomeScreen({ navigation }: any) {
       >
         <View style={styles.scanCardInner}>
           <View style={styles.scanCardDot} />
-          <Text style={styles.scanCardTitle}>{canStartScan ? 'Start New Scan' : 'Free Scan Used'}</Text>
+          <Text style={styles.scanCardTitle}>
+            {hasLicensedSession ? `Scan for ${enterpriseBrandName}` : canStartScan ? 'Start New Scan' : 'Free Scan Used'}
+          </Text>
           <Text style={styles.scanCardDesc}>
             {hasLicensedSession
-              ? 'Continue your licensed scan session for your tailor.'
+              ? 'Complete front, side, review, and submit steps so results reflect on the tailor dashboard.'
               : canStartScan
                 ? 'Quickly capture your measurements in under 5 minutes.'
                 : 'Use an invite link for another scan, or explore fit and style guidance.'}
@@ -83,7 +129,7 @@ export default function HomeScreen({ navigation }: any) {
         <Text style={styles.enterpriseTitle}>Scan for a fashion house or tailor</Text>
         <Text style={styles.enterpriseDesc}>
           {activeInviteCode
-            ? `Active branded code: ${activeInviteCode}${activeOrganizationName ? ` for ${activeOrganizationName}` : ''}`
+            ? `Active branded code: ${activeInviteCode}${activeOrganizationName ? ` for ${activeOrganizationName}` : ''}. You review before submitting to the dashboard.`
             : 'Load a branded invite code to start a licensed customer scan.'}
         </Text>
       </TouchableOpacity>
@@ -139,7 +185,11 @@ export default function HomeScreen({ navigation }: any) {
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>📏</Text>
             <Text style={styles.emptyText}>No measurements yet</Text>
-            <Text style={styles.emptySubtext}>Start your first scan to see results here</Text>
+            <Text style={styles.emptySubtext}>
+              {hasLicensedSession
+                ? `Complete your ${enterpriseBrandName} scan to see submitted measurements here`
+                : 'Start your first scan to see results here'}
+            </Text>
           </View>
         )}
       </View>
@@ -158,7 +208,9 @@ export default function HomeScreen({ navigation }: any) {
       {/* Privacy note */}
       <View style={styles.privacyRow}>
         <Text style={styles.privacyDot}>🟢</Text>
-        <Text style={styles.privacyText}>Your data is private and secure</Text>
+        <Text style={styles.privacyText}>
+          Enterprise completion shares derived measurements only. Photos are not sent in the dashboard payload.
+        </Text>
       </View>
 
       <View style={{ height: 80 }} />
@@ -210,6 +262,64 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 18,
     fontWeight: '700',
+  },
+  enterpriseModeCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  personalModeCard: {
+    backgroundColor: '#E0F7F5',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 185, 0.25)',
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  modeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  modeText: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  modeEyebrow: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  modeTitle: {
+    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 5,
+  },
+  modeDesc: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  modeBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  modeBadgeText: {
+    color: Colors.white,
+    fontSize: 10,
+    fontWeight: '800',
   },
   // Scan CTA card
   scanCard: {

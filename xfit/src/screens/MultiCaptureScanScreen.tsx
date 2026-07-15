@@ -22,6 +22,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Theme } from '../constants/theme';
 import { CaptureGuide } from '../components/CaptureGuide';
+import EnterpriseProgressStepper, { EnterpriseStep } from '../components/EnterpriseProgressStepper';
 import { LivePoseFeedback, analyzePose } from '../components/LivePoseFeedback';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { poseProcessor, PoseProcessingResult } from '../services/poseProcessor';
@@ -29,7 +30,6 @@ import { measurementEngine, CaptureAngle, ContourData } from '../services/measur
 import { contourService } from '../services/contourService';
 import { productionImageValidation } from '../services/productionImageValidation';
 import { accuracyEngine } from '../services/accuracyEngine';
-import { enterpriseApi } from '../services/enterpriseApi';
 import { useMeasurementStore } from '../stores/measurementStore';
 import { useEnterpriseStore } from '../stores/enterpriseStore';
 import { useUserStore } from '../stores/userStore';
@@ -76,9 +76,14 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   const addMeasurement = useMeasurementStore((state) => state.addMeasurement);
   const activeEnterpriseSessionId = useEnterpriseStore((state) => state.activeSessionId);
   const activeInviteCode = useEnterpriseStore((state) => state.activeInviteCode);
+  const activeOrganizationId = useEnterpriseStore((state) => state.organizationId);
+  const activeOrganizationName = useEnterpriseStore((state) => state.organizationName);
+  const organizationPrimaryColor = useEnterpriseStore((state) => state.organizationPrimaryColor);
   const activeEnterpriseCustomerName = useEnterpriseStore((state) => state.activeCustomerName);
   const activeEnterpriseCustomerEmail = useEnterpriseStore((state) => state.activeCustomerEmail);
-  const clearActiveEnterpriseSession = useEnterpriseStore((state) => state.clearActiveSession);
+  const activeOccasion = useEnterpriseStore((state) => state.activeOccasion);
+  const activePreferredFit = useEnterpriseStore((state) => state.activePreferredFit);
+  const activeStyleNotes = useEnterpriseStore((state) => state.activeStyleNotes);
   const user = useUserStore((state) => state.user);
 
   // Calibration passed from CalibrationScreen or route params
@@ -90,6 +95,14 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   const CAPTURE_STEPS: Array<'front' | 'side' | 'back'> = ['front', 'side', 'back'];
   const currentStepIndex = CAPTURE_STEPS.indexOf(currentStep as any);
   const hasAcceptedSideCapture = captures.some(c => c.type === 'side');
+  const isEnterpriseScan = Boolean(activeEnterpriseSessionId);
+  const enterpriseActiveStep: EnterpriseStep =
+    currentStep === 'front' ? 'front' : currentStep === 'side' ? 'side' : 'review';
+  const enterpriseCompletedSteps: EnterpriseStep[] = [
+    'profile',
+    ...(captures.some(c => c.type === 'front') ? ['front' as EnterpriseStep] : []),
+    ...(captures.some(c => c.type === 'side') ? ['side' as EnterpriseStep] : []),
+  ];
 
   // ============================================================
   // CAPTURE HANDLER
@@ -441,7 +454,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
       // Save measurement
       setProcessingProgress(90);
-      setProcessingMessage('Saving results...');
+      setProcessingMessage(activeEnterpriseSessionId ? 'Preparing client review...' : 'Saving results...');
 
       // Safe accessor: returns 0 for NaN, undefined, negative, or non-finite values
       const safe = (v: number | undefined): number =>
@@ -483,6 +496,18 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         },
         unit: user?.preferredUnit || 'cm',
         source: scanSource,
+        enterprise: activeEnterpriseSessionId ? {
+          sessionId: activeEnterpriseSessionId,
+          inviteCode: activeInviteCode,
+          organizationId: activeOrganizationId,
+          organizationName: activeOrganizationName,
+          customerName: activeEnterpriseCustomerName,
+          customerEmail: activeEnterpriseCustomerEmail,
+          occasion: activeOccasion,
+          preferredFit: activePreferredFit,
+          styleNotes: activeStyleNotes,
+          submissionStatus: 'draft',
+        } : undefined,
         images: allCaptures.map(c => c.imageUri),
         accuracy: {
           overallScore: result.overallAccuracy,
@@ -504,40 +529,6 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
       await addMeasurement(newMeasurement);
 
-      if (activeEnterpriseSessionId) {
-        try {
-          await enterpriseApi.completeSession(activeEnterpriseSessionId, {
-            measurementId: newMeasurement.id,
-            accuracyScore: result.overallAccuracy,
-            measurements: newMeasurement.measurements,
-            unit: newMeasurement.unit,
-            measurementProfile: userGender,
-            confidence: result.confidence,
-            warnings: result.warnings,
-            metadata: {
-              anglesUsed: result.metadata.anglesUsed,
-              calibrationMethod: result.metadata.calibrationMethod,
-              circumferenceSource: result.metadata.circumferenceSource,
-              missingRequiredAngles: result.metadata.missingRequiredAngles,
-              calibrationConfidence: result.metadata.calibrationConfidence,
-              contourConfidenceByPart: result.metadata.contourConfidenceByPart,
-              anchorMeasurement: result.metadata.anchorMeasurement,
-              measurementCatalogVersion: result.metadata.measurementCatalogVersion,
-              measurementProfile: result.metadata.measurementProfile,
-              engineVersion: result.metadata.engineVersion,
-              processingTimeMs: result.metadata.processingTimeMs,
-              activeInviteCode,
-              customerName: activeEnterpriseCustomerName,
-              customerEmail: activeEnterpriseCustomerEmail,
-              warnings: result.warnings,
-            },
-          });
-          await clearActiveEnterpriseSession();
-        } catch (enterpriseError) {
-          console.error('Enterprise session completion failed:', enterpriseError);
-        }
-      }
-
       if (__DEV__) {
         console.log('[ProcessMeasurements] Saved measurement values:', JSON.stringify(newMeasurement.measurements));
       }
@@ -551,6 +542,8 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         accuracyReport,
         measurementId: newMeasurement.id,
         source: scanSource,
+        enterpriseSubmissionStatus: activeEnterpriseSessionId ? 'draft' : undefined,
+        organizationName: activeOrganizationName,
       });
       resetScan();
     } catch (error: any) {
@@ -816,6 +809,24 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       )}
 
       {/* Top bar — close button + step indicator */}
+      {isEnterpriseScan && (
+        <View style={[styles.enterpriseCaptureBanner, organizationPrimaryColor ? { borderColor: organizationPrimaryColor } : null]}>
+          <Text style={styles.enterpriseCaptureLabel}>Licensed scan</Text>
+          <Text style={styles.enterpriseCaptureTitle} numberOfLines={1}>
+            {activeOrganizationName || 'Fashion house'}
+          </Text>
+          <Text style={styles.enterpriseCaptureMeta} numberOfLines={1}>
+            {activeEnterpriseCustomerName || 'Client'} - session {activeEnterpriseSessionId?.slice(-6)}
+          </Text>
+          <EnterpriseProgressStepper
+            activeStep={enterpriseActiveStep}
+            completedSteps={enterpriseCompletedSteps}
+            compact
+            tintColor={organizationPrimaryColor}
+          />
+        </View>
+      )}
+
       <View style={[styles.topBar, { position: 'absolute', top: 0, left: 0, right: 0 }]}>
           <TouchableOpacity
             style={styles.closeButton}
@@ -881,6 +892,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       <TouchableOpacity
         style={[
           styles.autoCapturePill,
+          isEnterpriseScan && styles.autoCapturePillEnterprise,
           !autoCaptureEnabled && styles.autoCapturePillOff,
         ]}
         onPress={() => {
@@ -1073,6 +1085,38 @@ const styles = StyleSheet.create({
   stepConnectorDone: {
     backgroundColor: Theme.colors.success,
   },
+  enterpriseCaptureBanner: {
+    position: 'absolute',
+    top: 108,
+    left: 16,
+    right: 16,
+    zIndex: 11,
+    backgroundColor: 'rgba(11, 25, 41, 0.86)',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  enterpriseCaptureLabel: {
+    color: Theme.colors.primary,
+    fontSize: 10,
+    fontWeight: Theme.fontWeight.bold,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  enterpriseCaptureTitle: {
+    color: Theme.colors.white,
+    fontSize: 15,
+    fontWeight: Theme.fontWeight.bold,
+  },
+  enterpriseCaptureMeta: {
+    color: 'rgba(255, 255, 255, 0.74)',
+    fontSize: 11,
+    marginTop: 2,
+    marginBottom: 6,
+  },
 
   // ---- Auto capture ----
   autoCapturePill: {
@@ -1089,6 +1133,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Theme.colors.primary,
     alignItems: 'center',
+  },
+  autoCapturePillEnterprise: {
+    top: 218,
   },
   autoCapturePillOff: {
     borderColor: 'rgba(255, 255, 255, 0.25)',
