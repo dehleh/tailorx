@@ -40,6 +40,7 @@ export interface CloudConfig {
 // ============================================================
 
 const PRODUCTION_API_URL = 'https://tailorx-pose-api-production.up.railway.app/v1/pose';
+const MAX_CLOUD_IMAGE_BASE64_CHARS = 6.5 * 1024 * 1024; // keep JSON body below Railway's 8 MiB cap
 
 const DEFAULT_CLOUD_CONFIG: CloudConfig = {
   apiUrl: process.env.EXPO_PUBLIC_POSE_API_URL || PRODUCTION_API_URL,
@@ -80,7 +81,8 @@ class PoseProcessor {
   private cloudConfig: CloudConfig;
   private isCloudAvailable: boolean | null = null;
   private lastCloudFailure: number = 0;
-  private static readonly CLOUD_RETRY_INTERVAL_MS = 30000; // Retry cloud every 30s after failure
+  private onDeviceUnavailable = false;
+  private static readonly CLOUD_RETRY_INTERVAL_MS = 90000; // Retry cloud after a short cooldown
 
   constructor(config?: Partial<CloudConfig>) {
     this.cloudConfig = { ...DEFAULT_CLOUD_CONFIG, ...config };
@@ -117,7 +119,7 @@ class PoseProcessor {
           processingTimeMs: Date.now() - startTime,
         };
       } catch (error) {
-        poseWarn('[PoseProcessor] Cloud processing failed:', error);
+        poseWarn('[PoseProcessor] Cloud processing failed:', this.formatError(error));
         this.isCloudAvailable = false;
         this.lastCloudFailure = Date.now();
       }
@@ -135,7 +137,7 @@ class PoseProcessor {
         processingTimeMs: Date.now() - startTime,
       };
     } catch (error) {
-      poseWarn('[PoseProcessor] On-device processing failed:', error);
+      poseWarn('[PoseProcessor] On-device processing failed:', this.formatError(error));
     }
 
     // Last resort: return estimated landmarks from image dimensions
@@ -176,13 +178,16 @@ class PoseProcessor {
       throw new Error('All burst frames failed pose detection');
     }
 
+    const detectorResults = results.filter(r => r.processingMode !== 'fallback');
+    const usableResults = detectorResults.length > 0 ? detectorResults : results;
+
     // If only one frame succeeded, return it directly
-    if (results.length === 1) {
-      return { ...results[0], processingTimeMs: Date.now() - startTime };
+    if (usableResults.length === 1) {
+      return { ...usableResults[0], processingTimeMs: Date.now() - startTime };
     }
 
     // Discard outlier frames: remove the frame whose landmarks deviate most
-    const filteredResults = this.selectBestFrames(this.filterOutlierFrames(results));
+    const filteredResults = this.selectBestFrames(this.filterOutlierFrames(usableResults));
 
     // Average landmarks across remaining frames
     const avgLandmarks = this.averageLandmarks(filteredResults);
@@ -297,26 +302,22 @@ class PoseProcessor {
    */
   async checkCloudAvailability(): Promise<boolean> {
     try {
-      const baseUrl = this.cloudConfig.apiUrl.replace(/\/detect\/?$/, '').replace(/\/+$/, '');
+      const baseUrl = this.getPoseBaseUrl();
       const healthUrl = `${baseUrl}/health`;
       poseLog('[PoseProcessor] Checking cloud at:', healthUrl);
       const headers: Record<string, string> = {};
       if (this.cloudConfig.apiKey) {
         headers['Authorization'] = `Bearer ${this.cloudConfig.apiKey}`;
       }
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const response = await fetch(healthUrl, {
+      const response = await this.fetchWithTimeout(healthUrl, {
         method: 'GET',
         headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+      }, 5000);
       poseLog('[PoseProcessor] Cloud health response:', response.status);
       this.isCloudAvailable = response.ok;
       return response.ok;
     } catch (error) {
-      poseWarn('[PoseProcessor] Cloud check failed:', error);
+      poseWarn('[PoseProcessor] Cloud check failed:', this.formatError(error));
       this.isCloudAvailable = false;
       return false;
     }
@@ -335,6 +336,12 @@ class PoseProcessor {
       encoding: 'base64',
     });
 
+    if (base64.length > MAX_CLOUD_IMAGE_BASE64_CHARS) {
+      throw new Error(
+        `Cloud upload skipped: captured image is too large (${this.formatBytes(base64.length)} encoded). Retake at scan quality.`
+      );
+    }
+
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= this.cloudConfig.retries; attempt++) {
@@ -346,15 +353,10 @@ class PoseProcessor {
             headers['Authorization'] = `Bearer ${this.cloudConfig.apiKey}`;
           }
 
-          // AbortSignal.timeout() is not available in Hermes/React Native,
-          // so use AbortController + setTimeout instead.
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), this.cloudConfig.timeout);
-
-          const detectUrl = `${this.cloudConfig.apiUrl}/detect`;
+          const detectUrl = `${this.getPoseBaseUrl()}/detect`;
           poseLog(`[PoseProcessor] Cloud request attempt ${attempt + 1}/${this.cloudConfig.retries + 1} → ${detectUrl}`);
 
-          const response = await fetch(detectUrl, {
+          const response = await this.fetchWithTimeout(detectUrl, {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -363,13 +365,13 @@ class PoseProcessor {
             model: 'blazepose_full',
             returnFormat: 'normalized',
           }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
+        }, this.cloudConfig.timeout);
 
         if (!response.ok) {
-          throw new Error(`Cloud API returned ${response.status}: ${await response.text()}`);
+          lastError = new Error(`Cloud API returned ${response.status}: ${await this.safeResponseText(response)}`);
+          const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+          if (!retryable) break;
+          throw lastError;
         }
 
         const data = await response.json();
@@ -418,6 +420,10 @@ class PoseProcessor {
     imageUri: string,
     captureType: string
   ): Promise<Omit<PoseProcessingResult, 'processingTimeMs'>> {
+    if (this.onDeviceUnavailable) {
+      throw new Error('On-device MediaPipe is not installed in this build');
+    }
+
     // Attempt to use react-native-mediapipe-pose for on-device inference.
     // The package must be installed and linked; if not available we throw
     // so the caller falls through to the estimation fallback.
@@ -455,6 +461,7 @@ class PoseProcessor {
       // If the native module is not installed, the require() will throw.
       // Log once and let caller fall through to estimation.
       if (error?.code === 'MODULE_NOT_FOUND' || error?.message?.includes('Cannot find module')) {
+        this.onDeviceUnavailable = true;
         poseInfo('[PoseProcessor] On-device MediaPipe not installed. Install @gymbrosinc/react-native-mediapipe-pose for offline landmark detection.');
       }
       throw new Error(`On-device processing not available: ${error?.message || error}`);
@@ -571,6 +578,52 @@ class PoseProcessor {
     this.isCloudAvailable = null; // Reset availability check
   }
 
+  private getPoseBaseUrl(): string {
+    return this.cloudConfig.apiUrl.replace(/\/detect\/?$/, '').replace(/\/+$/, '');
+  }
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private async safeResponseText(response: Response): Promise<string> {
+    try {
+      const text = await response.text();
+      return text.length > 500 ? `${text.slice(0, 500)}...` : text;
+    } catch {
+      return response.statusText || 'No response body';
+    }
+  }
+
+  private formatBytes(byteLikeLength: number): string {
+    const mb = byteLikeLength / (1024 * 1024);
+    return `${mb.toFixed(1)} MiB`;
+  }
+
+  private formatError(error: unknown): string {
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        return `Timed out after ${Math.round(this.cloudConfig.timeout / 1000)}s`;
+      }
+      return error.message;
+    }
+    return String(error);
+  }
+
   /**
    * Get current processing capabilities
    */
@@ -578,7 +631,7 @@ class PoseProcessor {
     return {
       cloudAvailable: this.isCloudAvailable,
       cloudConfigured: !!this.cloudConfig.apiKey,
-      onDeviceAvailable: true, // Always available as fallback
+      onDeviceAvailable: !this.onDeviceUnavailable,
       recommendedMode: this.cloudConfig.apiKey ? 'cloud' : 'on_device',
     };
   }

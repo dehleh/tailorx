@@ -39,6 +39,9 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BURST_TOTAL_FRAMES = 5;
 const AUTO_CAPTURE_SAMPLE_MS = 2200;
 const AUTO_CAPTURE_STABLE_MS = 1500;
+const PRIMARY_CAPTURE_QUALITY = 0.72;
+const BURST_CAPTURE_QUALITY = 0.5;
+const AUTO_SAMPLE_QUALITY = 0.25;
 
 // ============================================================
 // TYPES
@@ -140,7 +143,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
       // 1. Take photo (with base64 so we can write to a guaranteed-accessible path)
       const imageUri = await capturePhotoToCache({
-        quality: 1.0,
+        quality: PRIMARY_CAPTURE_QUALITY,
         base64: true,
         skipProcessing: false,
       }, 'capture');
@@ -197,7 +200,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       for (let i = 0; i < BURST_TOTAL_FRAMES - 1; i++) {
         try {
           const burstUri = await capturePhotoToCache({
-            quality: 0.9,
+            quality: BURST_CAPTURE_QUALITY,
             base64: true,
             skipProcessing: true, // faster for burst frames
           }, `burst_${i}`);
@@ -212,6 +215,17 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
       const poseResult = burstUris.length > 1
         ? await poseProcessor.processBurst(burstUris, currentStep as 'front' | 'side' | 'back')
         : await poseProcessor.processImage(imageUri, currentStep as 'front' | 'side' | 'back');
+
+      if (poseResult.processingMode === 'fallback') {
+        setIsCapturing(false);
+        setLiveLandmarks(null);
+        Alert.alert(
+          'Pose Engine Unavailable',
+          'Tailor-X could not reach cloud pose detection, and on-device pose detection is not installed in this app build. No scan was saved. Check your internet connection and retry.',
+          [{ text: 'Retry' }]
+        );
+        return;
+      }
 
       if (poseResult.confidence < 0.3) {
         setIsCapturing(false);
@@ -701,7 +715,7 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
     try {
       setAutoCaptureStatus('Checking pose');
       previewUri = await capturePhotoToCache({
-        quality: 0.35,
+        quality: AUTO_SAMPLE_QUALITY,
         base64: true,
         skipProcessing: true,
       }, 'auto_preview');
@@ -716,6 +730,13 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         previewUri,
         currentStep as 'front' | 'side' | 'back'
       );
+
+      if (poseResult.processingMode === 'fallback') {
+        setLiveLandmarks(null);
+        setAutoReadySince(null);
+        setAutoCaptureStatus('Pose engine offline');
+        return;
+      }
 
       if (poseResult.confidence < 0.3) {
         setLiveLandmarks(null);

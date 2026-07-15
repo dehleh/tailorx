@@ -43,7 +43,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import requests as http_requests
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -4082,7 +4082,7 @@ async def delete_organization(
 @app.post("/v1/pose/detect", response_model=PoseResponse)
 async def detect_pose(
     request: PoseRequest,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
 ):
     # Auth check
     if not verify_api_key(authorization):
@@ -4262,7 +4262,7 @@ class ContourRequest(BaseModel):
 @app.post("/v1/image/quality", response_model=ImageQualityResult)
 async def check_image_quality(
     request: ImageQualityRequest,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
 ):
     """Analyze image quality: blur, brightness, and contrast."""
     if not verify_api_key(authorization):
@@ -4421,7 +4421,7 @@ def _find_runs(mask: np.ndarray, min_length: int = 10) -> list[tuple[int, int]]:
 @app.post("/v1/image/detect-reference", response_model=ReferenceDetectionResult)
 async def detect_reference(
     request: ImageQualityRequest,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
 ):
     """Detect a reference object (credit card, A4 paper, ruler) in the image."""
     if not verify_api_key(authorization):
@@ -4698,7 +4698,7 @@ def _extract_body_contour_widths(
 @app.post("/v1/body/contour", response_model=ContourWidthResult)
 async def extract_body_contour(
     request: ContourRequest,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
 ):
     """
     Extract body silhouette contour widths from an image.
@@ -4773,7 +4773,7 @@ class DepthResponse(BaseModel):
 @app.post("/v1/depth/estimate", response_model=DepthResponse)
 async def estimate_depth(
     request: DepthRequest,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
 ):
     """Estimate monocular depth from a single image using MiDaS."""
     if not verify_api_key(authorization):
@@ -4991,7 +4991,7 @@ def _detect_aruco(np_image: np.ndarray, marker_size_cm: float) -> dict:
 @app.post("/v1/aruco/detect", response_model=ArucoResponse)
 async def detect_aruco_marker(
     request: ArucoRequest,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
 ):
     """Detect ArUco marker and compute scale factor."""
     if not verify_api_key(authorization):
@@ -5097,7 +5097,7 @@ def _filter_shadows_from_mask(
 @app.post("/v1/pose/detect-refined")
 async def detect_pose_refined(
     request: PoseRequest,
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
 ):
     """
     Detect pose landmarks with sub-pixel refinement (#6).
