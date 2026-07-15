@@ -16,7 +16,7 @@ import { buildStyleAdvice } from '../services/styleAdvisor';
 const tutorialVideos = [
   {
     title: 'Prepare for an accurate scan',
-    body: 'Fitted clothing, lighting, camera distance, front view, and side view.',
+    body: 'Fitted clothing, lighting, camera distance, front view, side view, and back view.',
     url: 'https://www.youtube.com/results?search_query=how+to+prepare+for+body+measurement+scan',
   },
   {
@@ -116,7 +116,7 @@ export default function EducationHubScreen() {
         </View>
         <View style={styles.checkRow}>
           <Text style={styles.checkDot}>3</Text>
-          <Text style={styles.checkText}>Capture both front and side views for circumference accuracy.</Text>
+          <Text style={styles.checkText}>Capture front, side, and back views for a complete fitting record.</Text>
         </View>
       </View>
 

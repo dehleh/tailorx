@@ -70,7 +70,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
             <Text style={styles.enterpriseLabel}>Licensed scan workflow</Text>
             <EnterpriseProgressStepper
               activeStep="review"
-              completedSteps={['profile', 'front', 'side']}
+              completedSteps={['profile', 'front', 'side', 'back']}
               tintColor={organizationPrimaryColor}
             />
           </View>

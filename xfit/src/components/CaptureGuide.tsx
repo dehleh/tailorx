@@ -123,8 +123,8 @@ const GUIDE_WIDTH = SCREEN_WIDTH * 0.75;
 const GUIDE_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 // Reserve space for the top bar and bottom controls to prevent overlap
-const TOP_RESERVED = 120;  // top bar height
-const BOTTOM_RESERVED = 170; // bottom controls height
+const TOP_RESERVED = 170;  // top controls + instruction clearance
+const BOTTOM_RESERVED = 150; // bottom controls height
 
 const styles = StyleSheet.create({
   container: {

@@ -81,7 +81,7 @@ export default function HomeScreen({ navigation }: any) {
           </View>
           <EnterpriseProgressStepper
             activeStep={lastSubmission ? 'submit' : 'profile'}
-            completedSteps={lastSubmission ? ['profile', 'front', 'side', 'review', 'submit'] : []}
+            completedSteps={lastSubmission ? ['profile', 'front', 'side', 'back', 'review', 'submit'] : []}
             compact
             tintColor={organizationPrimaryColor}
           />
@@ -109,7 +109,7 @@ export default function HomeScreen({ navigation }: any) {
           </Text>
           <Text style={styles.scanCardDesc}>
             {hasLicensedSession
-              ? 'Complete front, side, review, and submit steps so results reflect on the tailor dashboard.'
+              ? 'Complete front, side, back, review, and submit steps so results reflect on the tailor dashboard.'
               : canStartScan
                 ? 'Quickly capture your measurements in under 5 minutes.'
                 : 'Use an invite link for another scan, or explore fit and style guidance.'}

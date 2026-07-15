@@ -243,10 +243,10 @@ function CheckItem({ label, ok }: { label: string; ok: boolean }) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 100,
+    top: 210,
     left: 0,
     right: 0,
-    bottom: 120,
+    bottom: 150,
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,

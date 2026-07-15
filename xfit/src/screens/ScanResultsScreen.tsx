@@ -509,8 +509,8 @@ export default function ScanResultsScreen({
             <EnterpriseProgressStepper
               activeStep={enterpriseSubmissionStatus === 'submitted' ? 'submit' : 'review'}
               completedSteps={enterpriseSubmissionStatus === 'submitted'
-                ? ['profile', 'front', 'side', 'review', 'submit']
-                : ['profile', 'front', 'side']}
+                ? ['profile', 'front', 'side', 'back', 'review', 'submit']
+                : ['profile', 'front', 'side', 'back']}
               tintColor={organizationPrimaryColor}
             />
             {(activeOccasion || activePreferredFit || activeStyleNotes || savedMeasurement?.enterprise?.occasion) && (

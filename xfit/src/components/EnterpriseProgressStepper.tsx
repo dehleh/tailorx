@@ -2,12 +2,13 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Colors } from '../constants/colors';
 
-export type EnterpriseStep = 'profile' | 'front' | 'side' | 'review' | 'submit';
+export type EnterpriseStep = 'profile' | 'front' | 'side' | 'back' | 'review' | 'submit';
 
 const steps: Array<{ key: EnterpriseStep; label: string }> = [
   { key: 'profile', label: 'Profile' },
   { key: 'front', label: 'Front' },
   { key: 'side', label: 'Side' },
+  { key: 'back', label: 'Back' },
   { key: 'review', label: 'Review' },
   { key: 'submit', label: 'Submit' },
 ];
@@ -74,9 +75,11 @@ export default function EnterpriseProgressStepper({
 const styles = StyleSheet.create({
   wrapper: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
+    rowGap: 6,
   },
   wrapperCompact: {
     paddingVertical: 0,
@@ -112,7 +115,7 @@ const styles = StyleSheet.create({
     color: Colors.secondary,
   },
   label: {
-    maxWidth: 54,
+    maxWidth: 48,
     marginLeft: 5,
     fontSize: 10,
     fontWeight: '700',
@@ -122,7 +125,7 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
   },
   connector: {
-    width: 14,
+    width: 10,
     height: 2,
     borderRadius: 1,
     backgroundColor: Colors.border,

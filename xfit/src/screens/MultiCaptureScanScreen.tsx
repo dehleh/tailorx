@@ -2,7 +2,7 @@
  * Multi-Angle Scan Screen
  * 
  * Production-ready body scanning with:
- * - Multi-angle capture (front + side + optional back)
+ * - Multi-angle capture (front + side + back)
  * - Visual pose guide overlay
  * - Real-time image validation
  * - Progress tracking
@@ -95,13 +95,15 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
   const CAPTURE_STEPS: Array<'front' | 'side' | 'back'> = ['front', 'side', 'back'];
   const currentStepIndex = CAPTURE_STEPS.indexOf(currentStep as any);
   const hasAcceptedSideCapture = captures.some(c => c.type === 'side');
+  const hasAcceptedBackCapture = captures.some(c => c.type === 'back');
   const isEnterpriseScan = Boolean(activeEnterpriseSessionId);
   const enterpriseActiveStep: EnterpriseStep =
-    currentStep === 'front' ? 'front' : currentStep === 'side' ? 'side' : 'review';
+    currentStep === 'front' ? 'front' : currentStep === 'side' ? 'side' : currentStep === 'back' ? 'back' : 'review';
   const enterpriseCompletedSteps: EnterpriseStep[] = [
     'profile',
     ...(captures.some(c => c.type === 'front') ? ['front' as EnterpriseStep] : []),
     ...(captures.some(c => c.type === 'side') ? ['side' as EnterpriseStep] : []),
+    ...(captures.some(c => c.type === 'back') ? ['back' as EnterpriseStep] : []),
   ];
 
   // ============================================================
@@ -265,6 +267,8 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
 
         const nextStep = CAPTURE_STEPS[nextStepIndex];
         const isSideNext = nextStep === 'side';
+        const isBackNext = nextStep === 'back';
+        const isRequiredNext = isSideNext || isBackNext;
 
         // Encourage side-view capture because it gives circumference estimates more evidence.
         Alert.alert(
@@ -274,12 +278,14 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           `Next: ${capitalize(nextStep)} view` +
           (isSideNext
             ? '\n\nAdding a side view gives the engine depth evidence for chest, waist, and hips.'
+            : isBackNext
+              ? '\n\nAdding a back view improves shoulder balance, back width, and posture checks.'
             : ''),
           [
             {
               text: `Capture ${capitalize(nextStep)}`,
             },
-            ...(isSideNext
+            ...(isRequiredNext
               ? [] // Don't offer "Finish Now" before side view — strongly encourage it
               : [{
                   text: 'Finish Now',
@@ -312,6 +318,18 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         'Side View Required',
         'Capture a side view before finishing. Chest, waist, hips, thigh, and calf need side-view depth evidence.',
         [{ text: 'Capture Side View' }]
+      );
+      return;
+    }
+
+    if (!allCaptures.some(c => c.type === 'back')) {
+      setCurrentStep('back');
+      setIsCapturing(false);
+      setIsProcessing(false);
+      Alert.alert(
+        'Back View Required',
+        'Capture a back view before finishing. Back view improves shoulder balance, back width, posture, and garment fit checks.',
+        [{ text: 'Capture Back View' }]
       );
       return;
     }
@@ -563,11 +581,13 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
     )[0];
     const lowConfidenceCaptures = allCaptures.filter(c => c.poseResult.confidence < 0.65);
     const missingSide = !allCaptures.some(c => c.type === 'side');
+    const missingBack = !allCaptures.some(c => c.type === 'back');
     const summary = allCaptures
       .map(c => `${capitalize(c.type)}: ${Math.round(c.poseResult.confidence * 100)}%`)
       .join('\n');
     const reviewNotes = [
       missingSide ? 'Side view is required before measuring circumferences.' : null,
+      missingBack ? 'Back view is required for shoulder balance, back width, and posture checks.' : null,
       lowConfidenceCaptures.length > 0
         ? `Retake recommended: ${lowConfidenceCaptures.map(c => capitalize(c.type)).join(', ')}.`
         : 'All required capture angles passed the current gates.',
@@ -587,6 +607,16 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
                 style: 'cancel' as const,
                 onPress: () => {
                   setCurrentStep('side');
+                  resolve();
+                },
+              }]
+            : []),
+          ...(!missingSide && missingBack
+            ? [{
+                text: 'Capture Back',
+                style: 'cancel' as const,
+                onPress: () => {
+                  setCurrentStep('back');
                   resolve();
                 },
               }]
@@ -643,6 +673,16 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
         [{ text: 'Capture Side View', style: 'cancel' }]
       );
       setCurrentStep('side');
+      return;
+    }
+
+    if (!hasAcceptedBackCapture) {
+      Alert.alert(
+        'Back View Required',
+        'Capture a back view before finishing. Back view improves shoulder balance, back width, posture, and garment fit checks.',
+        [{ text: 'Capture Back View', style: 'cancel' }]
+      );
+      setCurrentStep('back');
       return;
     }
 
@@ -916,17 +956,19 @@ export default function MultiCaptureScanScreen({ navigation, route }: any) {
           <TouchableOpacity
             style={styles.skipButton}
             onPress={skipStep}
-            disabled={captures.length === 0 || !hasAcceptedSideCapture}
+            disabled={captures.length === 0 || !hasAcceptedSideCapture || !hasAcceptedBackCapture}
           >
             <Text style={[
               styles.skipText,
-              (captures.length === 0 || !hasAcceptedSideCapture) && styles.skipTextDisabled,
-              (captures.length > 0 && !hasAcceptedSideCapture) && styles.skipTextHidden,
+              (captures.length === 0 || !hasAcceptedSideCapture || !hasAcceptedBackCapture) && styles.skipTextDisabled,
+              (captures.length > 0 && (!hasAcceptedSideCapture || !hasAcceptedBackCapture)) && styles.skipTextHidden,
             ]}>
               {captures.length > 0 ? 'Finish ▶' : ''}
             </Text>
-            {captures.length > 0 && !hasAcceptedSideCapture && (
-              <Text style={styles.sideRequiredText}>Side required</Text>
+            {captures.length > 0 && (!hasAcceptedSideCapture || !hasAcceptedBackCapture) && (
+              <Text style={styles.sideRequiredText}>
+                {!hasAcceptedSideCapture ? 'Side required' : 'Back required'}
+              </Text>
             )}
           </TouchableOpacity>
 

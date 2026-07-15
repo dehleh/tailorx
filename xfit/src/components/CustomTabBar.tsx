@@ -30,6 +30,12 @@ const TAB_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; activeI
 };
 
 export function CustomTabBar({ state, descriptors, navigation }: CustomTabBarProps) {
+  const focusedRoute = state.routes[state.index];
+
+  if (focusedRoute?.name === 'Scan') {
+    return null;
+  }
+
   return (
     <View style={styles.wrapper}>
       <View style={styles.container}>
